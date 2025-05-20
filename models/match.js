@@ -1,22 +1,20 @@
 import mongoose from 'mongoose';
 
+const TeamSchema = new mongoose.Schema({
+  name: String,
+  country: String,
+  score: String
+}, { _id: false });
+
 const MatchSchema = new mongoose.Schema({
-  id: { type: String, unique: true }, // id del partido
-  time: String,
-  team1: {
-    name: String,
-    score: Number,
-  },
-  team2: {
-    name: String,
-    score: Number,
-  },
-  event: {
-    name: String,
-    logo: String,
-  },
-  status: String
+  id: { type: String, unique: true }, // ID del partido desde la API externa
+  teams: [TeamSchema], // Arreglo con 2 equipos
+  status: String,
+  event: String,
+  tournament: String,
+  img: String,
+  in: String
 });
 
-// Evitar redefinir el modelo si ya existe (en desarrollo)
+// Evitar error por recompilar modelo en desarrollo
 export default mongoose.models.Match || mongoose.model('Match', MatchSchema);

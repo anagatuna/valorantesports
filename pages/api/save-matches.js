@@ -1,25 +1,22 @@
-import dbConnect from '@/lib/mongodb';
+import dbConnect from '@/lib/dbConnect';
 import Match from '@/models/Match';
 
-export default async function handler(req, res) {
+export async function guardarMatchesDesdeAPI() {
   await dbConnect();
 
-  const response = await fetch('https://vlresports.vercel.app/api/matches');
-  const data = await response.json();
-  const matches = data.data;
+  const res = await fetch('https://vlr.orlandomm.net/api/v1/matches');
+  const json = await res.json();
+  const matches = json.data;
 
-  try {
-    for (const match of matches) {
+  for (const match of matches) {
+    try {
       await Match.updateOne(
         { id: match.id },
         { $set: match },
-        { upsert: true }
+        { upsert: true } // inserta si no existe
       );
+    } catch (err) {
+      console.error(`Error guardando el match ${match.id}:`, err);
     }
-
-    res.status(200).json({ message: 'Partidos guardados en MongoDB' });
-  } catch (error) {
-    console.error('Error al guardar:', error);
-    res.status(500).json({ error: 'Ocurrió un error al guardar los partidos' });
   }
 }
