@@ -33,7 +33,7 @@ export default function Home() {
               <img
                 src={match.img}
                 alt="Imagen del partido"
-                className="w-full h-32 object-cover mb-4 rounded" //aqui hay que cambiar el tamaño de los logos de los torneos.//
+                className="w-full h-auto object-cover mb-4 rounded" //aqui hay que cambiar el tamaño de los logos de los torneos.//
               />
             )}
             <p className="text-lg font-semibold mb-1">
