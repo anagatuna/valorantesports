@@ -1,56 +1,126 @@
 // src/components/MatchGrid.jsx
 "use client";
+
 import { useEffect, useState } from "react";
 import MatchCard from "./MatchCard";
+import { loadLogosFromCache, saveLogosToCache } from "../utils/teamLogoCache";
 
 export default function MatchGrid() {
   const [matches, setMatches] = useState([]);
   const [teamLogos, setTeamLogos] = useState({});
+  const [teamList, setTeamList] = useState([]);
+
+  const fetchAllTeams = async () => {
+    const cached = loadLogosFromCache();
+    if (cached) {
+      console.log("♻️ Cargando logos desde caché válido");
+      console.log("📦 Cache cargado:", cached);
+      setTeamLogos(cached.logoMap);
+      setTeamList(cached.teamList);
+      return;
+    }
+
+    let page = 1;
+    let hasNextPage = true;
+    const fullList = [];
+    const logos = {};
+
+    while (hasNextPage) {
+      console.log(`🔄 Fetching page ${page}...`);
+      try {
+        const res = await fetch(`https://vlr.orlandomm.net/api/v1/teams?page=${page}&size=200`);
+
+        if (!res.ok) {
+          console.error(`❌ Error HTTP en página ${page}: ${res.status}`);
+          break;
+        }
+
+        const json = await res.json();
+
+        if (!Array.isArray(json.data)) {
+          console.error(`❌ Respuesta inesperada en página ${page}`, json);
+          break;
+        }
+
+        json.data.forEach(team => {
+          const key = normalize(team.name);
+          if (key && image) {
+            logos[key] = image;
+          }
+
+        });
+
+        console.log(`✅ Página ${page} cargada con ${json.data.length} equipos.`);
+        hasNextPage = json.pagination?.hasNextPage;
+        page++;
+
+      } catch (err) {
+        console.error(`❌ Error inesperado en página ${page}`, err);
+        break;
+      }
+    }
+
+    console.log("🔎 Total de equipos cargados:", fullList.length);
+    saveLogosToCache(logos, fullList);
+    console.log("✅ Logos cacheados correctamente");
+    setTeamLogos(logos);
+    setTeamList(fullList);
+  };
 
   useEffect(() => {
     const fetchMatches = async () => {
-      const res = await fetch("https://vlr.orlandomm.net/api/v1/matches");
-      const json = await res.json();
-      const matchData = json.data;
-      setMatches(matchData);
+      try {
+        console.log("🎯 Iniciando fetchMatches...");
+        const res = await fetch("https://vlr.orlandomm.net/api/v1/matches");
+        const json = await res.json();
+        setMatches(json.data);
+        console.log("✅ Partidos cargados. Ahora llamando a fetchAllTeams()...");
 
-      // Obtener nombres únicos de equipos
-      const teamNames = new Set();
-      matchData.forEach((match) => {
-        match.teams?.forEach((team) => {
-          if (team?.name) teamNames.add(team.name);
-        });
-      });
+        const teamNamesInMatches = new Set();
 
-      // Fetch logos por nombre
-      const logoMap = {};
-      await Promise.all(
-        [...teamNames].map(async (name) => {
-          try {
-            const res = await fetch(`https://vlr.orlandomm.net/api/v1/teams?name=${encodeURIComponent(name)}`);
-            const json = await res.json();
-            if (json.data?.[0]?.img) {
-              logoMap[name] = json.data[0].img;
+        json.data.forEach(match => {
+          match.teams?.forEach(team => {
+            if (team?.name) {
+              teamNamesInMatches.add(team.name.trim().toLowerCase());
             }
-          } catch (err) {
-            console.error("Error fetching logo for", name, err);
-          }
-        })
-      );
-      setTeamLogos(logoMap);
+          });
+        });
+
+        const knownTeamNames = new Set(teamList.map(t => t.name.trim().toLowerCase()));
+
+        const noLogoTeams = [...teamNamesInMatches].filter(name => !knownTeamNames.has(name));
+
+        console.log("🔍 Equipos en partidos sin coincidencia exacta en logoMap:");
+        console.table(noLogoTeams);
+
+        await fetchAllTeams();
+
+        console.log("✅ fetchAllTeams ejecutado.");
+      } catch (err) {
+        console.error("❌ Error cargando partidos o equipos:", err);
+      }
     };
 
     fetchMatches();
   }, []);
 
-  if (!matches.length) {
-    return <p className="text-gray-400">Loading matches...</p>;
+  if (
+    !matches.length ||
+    !Object.keys(teamLogos).length ||
+    !teamList.length
+  ) {
+    return <p className="text-gray-400">Cargando datos...</p>;
   }
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
       {matches.map((match, index) => (
-        <MatchCard key={index} match={match} logos={teamLogos} />
+        <MatchCard
+          key={index}
+          match={match}
+          logos={teamLogos}
+          teamList={teamList}
+        />
       ))}
     </div>
   );
