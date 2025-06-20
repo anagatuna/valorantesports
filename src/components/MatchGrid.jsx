@@ -16,6 +16,7 @@ export default function MatchGrid() {
       console.log("♻️ Cargando logos desde caché válido");
       console.log("📦 Cache cargado:", cached);
       setTeamLogos(cached.logoMap);
+      console.log("🧠 logoMap final:", cached.logoMap);
       setTeamList(cached.teamList);
       return;
     }
@@ -42,8 +43,13 @@ export default function MatchGrid() {
           break;
         }
 
+        function normalize(name) {
+          return name?.toLowerCase().replace(/[\s\-_\.]+/g, "").trim();
+        }
+
         json.data.forEach(team => {
           const key = normalize(team.name);
+          const image = team.img || team.image;
           if (key && image) {
             logos[key] = image;
           }
@@ -104,11 +110,7 @@ export default function MatchGrid() {
     fetchMatches();
   }, []);
 
-  if (
-    !matches.length ||
-    !Object.keys(teamLogos).length ||
-    !teamList.length
-  ) {
+  if (!matches.length) {
     return <p className="text-gray-400">Cargando datos...</p>;
   }
 
