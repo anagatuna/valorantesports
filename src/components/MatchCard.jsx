@@ -42,7 +42,7 @@ export default function MatchCard({ match, logos = {}, teamList = [] }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
       whileHover={{ scale: 1.03 }}
-      className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-4 hover:shadow-xl transition"
+      className="bg-gradient-to-br from-[#0F1923] via-[#1A1F25] to-[#1F2326] rounded-xl p-4 hover:shadow-xl transition"
     >
       <div className="flex justify-between items-center text-sm text-gray-400 mb-2">
         <span>{match.event}</span>
