@@ -133,20 +133,29 @@ body {
   }
 }
 
-/* ===== Vars ===== */
-:root {
-  --app-bg: #171A23;
+/* ===== Navbar ===== */
+:root{
+  --bar-h: 60px;         /* un poco más baja como la ref */
+  --bar-slash: 40px;     /* extremos \   / más largos */
+  --chip-w: 300px;       /* PLAY más ancho (texto respira) */
+  --shoulder-w: 62px;    /* hombros MÁS angostos */
+  --shoulder-cut: 42px;  /* y MÁS profundos (se ve la V marcada) */
 
-  --bar-h: 64px;
-  --bar-slash: 28px;
-  /* profundidad de los cortes en extremos (\ y /) */
+  /* Rojo de la BARRA (menos saturado) */
+  --bar-red-top: #b33a42;
+  --bar-red-mid: #8f2d35;
+  --bar-red-bot: #54171d;
+  --bar-tint: .80;          /* ⬅️ 0.6–0.9: menor = menos rojo */
 
-  --chip-w: 280px;
-  /* ancho del botón PLAY */
-  --shoulder-w: 90px;
-  /* ancho de cada hombro (overlay) */
-  --shoulder-cut: 26px;
-  /* qué tan adentro va la diagonal del hombro */
+  /* sombras laterales un poco más suaves */
+  --edge-dark: rgba(0,0,0,.25);
+  --edge-soft: rgba(0,0,0,.10);
+  --edge-w: 12%;
+
+  /* Rojo tipo Valorant para el PLAY */
+  --play-top:   #F0535A;  /* arriba (ligeramente más claro) */
+  --play-mid:   #E2464E;  /* centro */
+  --play-bot:   #C63940;  /* abajo (un toque más oscuro) */
 }
 
 /* Contenedor arriba y centrado */
@@ -160,11 +169,6 @@ body {
   z-index: 50;
 }
 
-html,
-body {
-  margin: 0;
-}
-
 /* ===== Barra principal con extremos \ ........ / ===== */
 .valo-bar {
   position: relative;
@@ -172,12 +176,15 @@ body {
   justify-content: space-between;
   align-items: center;
   height: var(--bar-h);
-  background: linear-gradient(180deg, #5b0f15 0%, #3a0b10 100%);
-  border: 1px solid rgba(255, 255, 255, .08);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .06);
+  backdrop-filter: none; 
+  background: #a81318;
+  background: radial-gradient(circle, rgba(168, 19, 24, 1) 0%, rgba(81, 26, 26, 1) 76%);
+
+  border: 1px solid rgba(255,255,255,.06);
+  box-shadow: 0 12px 36px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04);
   padding: 0 18px;
   color: #eaeaea;
-  gap: 72px;
+  gap: 48px;
   border-radius: 0;
   clip-path: polygon(
     0 0,                                 /* esquina arriba-izq recta (\)  */
@@ -191,7 +198,7 @@ body {
 /* Lados (links) */
 .valo-side {
   display: flex;
-  gap: 22px;
+  gap: 12px ;
   align-items: center;
   z-index: 1;
 }
@@ -211,6 +218,32 @@ body {
   background: rgba(255, 255, 255, .06);
 }
 
+/* antes: .valo-side li a {}  */
+.valo-side a{
+  display:block;
+  padding:8px 12px;
+  border-radius:8px;
+  font-weight:700;
+  color:#eaeaea;
+  white-space:nowrap;
+  transition:.18s ease;
+}
+.valo-side a:hover{ color:#fff; background:rgba(255,255,255,.06); }
+
+/* UL limpio */
+.valo-bar{ list-style:none; margin:0; padding:0 18px; }
+
+/* 3 columnas: [izq][ PLAY+hombros ][der] */
+.valo-bar{
+  display:grid;
+  grid-template-columns: 1fr calc(var(--chip-w) + 2 * var(--shoulder-w)) 1fr;
+  align-items:center;
+  gap: 0;                
+}
+.valo-side{ display:flex; gap:10px; align-items:center; z-index:1; }
+.valo-side.left{  justify-self:end; }
+.valo-side.right{ justify-self:start; }
+
 /* Botón central RECTO (se integra a la barra) */
 .valo-center {
   position: absolute;
@@ -222,30 +255,30 @@ body {
 }
 
 .play-chip {
-  display: block;
-  width: var(--chip-w);
-  height: var(--bar-h);
-  line-height: var(--bar-h);
-  text-align: center;
-  font-weight: 900;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  color: #fff;
+  display:block;
+  width:var(--chip-w);
+  height:var(--bar-h);
+  line-height:var(--bar-h);
+  text-align:center;
+  font-weight:900;
+  font-size: 20px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:#fff;
+
+  /* brillo MUY leve arriba + gradiente rojo plano */
   background:
-    radial-gradient(120% 200% at 50% 0%, rgba(255, 255, 255, .25) 0%, rgba(255, 255, 255, 0) 46%),
-    linear-gradient(180deg, #ff5a70 0%, #d64052 55%, #a12835 100%);
-  border-top: 1px solid rgba(255, 255, 255, .22);
-  border-bottom: 1px solid rgba(255, 255, 255, .22);
-  box-shadow: inset 0 -10px 18px rgba(0, 0, 0, .25), inset 0 1px 0 rgba(255, 255, 255, .25);
-  transition: transform .15s ease, filter .15s ease;
-  border-radius: 0;
-  clip-path: polygon(
-    0 0,                                 /* esquina arriba-izq recta (\)  */
-    100% 0,                              /* esquina arriba-der recta (/) */
-    calc(100% - var(--bar-slash)) 100%,  /* corte abajo-derecha           */
-    var(--bar-slash) 100%                /* corte abajo-izquierda         */
-    );
-  overflow: visible;
+    linear-gradient(180deg, rgba(255,255,255,.08) 0%, rgba(255,255,255,0) 14%),
+    linear-gradient(180deg, var(--play-top) 0%, var(--play-mid) 60%, var(--play-bot) 100%);
+
+  /* bordes casi invisibles (la 1ª imagen no tiene líneas fuertes) */
+  border-top: 1px solid rgba(255,255,255,.06);
+  border-bottom: 1px solid rgba(0,0,0,.08);
+
+  /* quita los brillos internos antiguos si los tenías */
+  box-shadow: none;
+  /* mantiene la forma \   / que ya usas con clip-path */
+  clip-path: polygon(0 0, 100% 0, calc(100% - var(--bar-slash)) 100%, var(--bar-slash) 100%);
 }
 
 .play-chip:hover {
@@ -253,31 +286,28 @@ body {
   filter: brightness(1.06);
 }
 
-/* HOMBROS (overlays oscuros que “cortan” el chip) */
+/* “línea” muy sutil bajo el chip (como glow de la ref) */
+.play-chip::after{
+  content:"";
+  position:absolute; left:10%; right:10%; bottom:-1px; height:2px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent);
+  opacity:.5;
+  pointer-events:none;
+}
+
+/* overlays oscuros por ENCIMA del chip */
 .valo-bar::before,
-.valo-bar::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  height: 100%;
-  width: var(--shoulder-w);
+.valo-bar::after{
   z-index: 3;
-  pointer-events: none;
-  background: linear-gradient(180deg, #5b0f15 0%, #3a0b10 100%);
-  /* mismo gradiente */
+  width: var(--shoulder-w);
   clip-path: polygon(0 0, 100% 0, calc(100% - var(--shoulder-cut)) 50%, 100% 100%, 0 100%);
+  background: linear-gradient(180deg, var(--bar-red-top) 0%, var(--bar-red-mid) 56%, var(--bar-red-bot) 100%);
 }
 
-/* Pegados a cada borde del chip */
-.valo-bar::before {
-  left: calc(50% - var(--chip-w)/2 - var(--shoulder-w));
-}
+/* pegados a los bordes del chip */
+.valo-bar::before{ left: calc(50% - var(--chip-w)/2 - var(--shoulder-w)); }
+.valo-bar::after{  left: calc(50% + var(--chip-w)/2); transform: scaleX(-1); }
 
-/* izquierdo */
-.valo-bar::after {
-  left: calc(50% + var(--chip-w)/2);
-  transform: scaleX(-1);
-}
 
 /* derecho */
 
