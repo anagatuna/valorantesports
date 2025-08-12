@@ -1,14 +1,14 @@
 // app/matches/page.jsx
-import Navbar from "@/components/Navbar";
-import MatchGrid from "@/components/MatchGrid";
 
 export default function MatchesPage() {
   return (
-    <div className="valorant-bg text-white">
-      <Navbar />
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        <h1 className="text-3xl font-bold mb-6 mt-15">Upcoming Matches</h1>
-        <MatchGrid />
+    <div className="valorant-bg text-white min-h-screen flex items-center justify-center">
+      <main className="flex flex-col items-center justify-center">
+        <img
+          src="/vct-americas.svg"
+          alt="VCT Americas"
+          className="w-64 h-auto" 
+        />
       </main>
     </div>
   );
