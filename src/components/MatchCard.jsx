@@ -1,6 +1,6 @@
-// src/components/MatchCard.jsx
 "use client";
 import Image from "next/image";
+import Link from "next/link";
 import { motion } from "framer-motion";
 
 function normalize(name) {
@@ -10,24 +10,16 @@ function normalize(name) {
 function findLogoFor(name, logoMap = {}, teamList = []) {
   const norm = normalize(name);
   if (!norm) return null;
-
-  // Coincidencia exacta
   if (logoMap[norm]) return logoMap[norm];
-
-  // Coincidencia parcial más permisiva
   for (const team of teamList) {
     const ref = normalize(team.name);
-    if (ref && (ref.includes(norm) || norm.includes(ref))) {
-      return team.img;
-    }
+    if (ref && (ref.includes(norm) || norm.includes(ref))) return team.img;
   }
-
   return null;
 }
 
 export default function MatchCard({ match, logos = {}, teamList = [] }) {
   const [team1, team2] = match.teams ?? [{}, {}];
-
   const isValidTeam = (name) => {
     const norm = normalize(name);
     return norm && norm !== "tbd";
@@ -36,7 +28,7 @@ export default function MatchCard({ match, logos = {}, teamList = [] }) {
   const logo1 = isValidTeam(team1.name) ? findLogoFor(team1.name, logos, teamList) : null;
   const logo2 = isValidTeam(team2.name) ? findLogoFor(team2.name, logos, teamList) : null;
 
-  return (
+  const Card = (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
@@ -45,7 +37,7 @@ export default function MatchCard({ match, logos = {}, teamList = [] }) {
       className="bg-gradient-to-br from-[#0F1923] via-[#1A1F25] to-[#1F2326] rounded-xl p-4 hover:shadow-xl transition"
     >
       <div className="flex justify-between items-center text-sm text-gray-400 mb-2">
-        <span>{match.event}</span>
+        <span className="truncate">{match.event}</span>
         <span className={`font-semibold ${match.status === 'LIVE' ? 'text-red-500' : 'text-slate-500'}`}>
           {match.status}
         </span>
@@ -59,6 +51,7 @@ export default function MatchCard({ match, logos = {}, teamList = [] }) {
               alt={team1.name}
               width={24}
               height={24}
+              unoptimized
               style={{ height: 'auto' }}
               className="rounded-full"
             />
@@ -76,6 +69,7 @@ export default function MatchCard({ match, logos = {}, teamList = [] }) {
               alt={team2.name}
               width={24}
               height={24}
+              unoptimized
               style={{ height: 'auto' }}
               className="rounded-full"
             />
@@ -88,4 +82,7 @@ export default function MatchCard({ match, logos = {}, teamList = [] }) {
       <p className="text-xs text-gray-500 mt-3">{match.in ?? 'Unknown time'}</p>
     </motion.div>
   );
+
+  // Si trae id, hacemos la card navegable
+  return match.id ? <Link href={`/matches/${match.id}`}>{Card}</Link> : Card;
 }

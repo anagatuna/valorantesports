@@ -12,6 +12,16 @@ const nextConfig = {
         hostname: 'owcdn.net',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'www.vlr.gg',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'vlr.gg',
+        pathname: '/**',
+      },
     ],
   },
 };

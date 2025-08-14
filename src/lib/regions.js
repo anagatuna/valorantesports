@@ -1,6 +1,6 @@
 export const BUCKETS = {
   AMERICAS: ['na', 'br', 'lan', 'las'],
-  EMEA:     ['eu', 'mn'],              // MENA
+  EMEA:     ['eu', 'mn'],
   PACIFIC:  ['ap', 'kr', 'jp', 'oce'],
-  CN:       ['ch']
+  CN:       ['cn', 'ch']
 };
