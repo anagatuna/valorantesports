@@ -1,5 +1,5 @@
 // pages/api/refresh.js
-import dbConnect from '../../lib/dbConnect';
+import dbConnect from '../../src/lib/dbConnect';
 import Match from '../../models/match';
 
 export default async function handler(req, res) {
