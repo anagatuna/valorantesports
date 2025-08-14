@@ -1,6 +1,6 @@
 // pages/api/matches/index.js
 import dbConnect from '@/lib/dbConnect';
-import Match from '@/models/Match';
+import Match from '@/models/match';
 
 export default async function handler(req, res) {
   await dbConnect();
