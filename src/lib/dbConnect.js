@@ -1,29 +1,21 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
 const MONGODB_URI = process.env.MONGODB_URI;
-
 if (!MONGODB_URI) {
-  throw new Error('❌ No está definida la variable MONGODB_URI en el entorno');
+  throw new Error("❌ Falta MONGODB_URI en .env.local");
 }
 
-let cached = global.mongoose || { conn: null, promise: null };
+let cached = global._mongoose;
+if (!cached) cached = global._mongoose = { conn: null, promise: null };
 
-async function dbConnect() {
+export default async function dbConnect() {
   if (cached.conn) return cached.conn;
-
   if (!cached.promise) {
     cached.promise = mongoose.connect(MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    }).then((mongoose) => {
-      console.log('✅ Conectado a MongoDB');
-      return mongoose;
-    });
+      bufferCommands: false,
+      serverSelectionTimeoutMS: 8000,
+    }).then((m) => m);
   }
-
   cached.conn = await cached.promise;
-  global.mongoose = cached;
   return cached.conn;
 }
-
-export default dbConnect;

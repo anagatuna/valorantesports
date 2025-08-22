@@ -1,2 +1,4 @@
-MONGODB_URI=mongodb+srv://anagatuna:<Chispi_014>@valorantesports.oybnrmr.mongodb.net/valorantesports?retryWrites=true&w=majority&appName=valorantesports
-REFRESH_SECRET=miclave123
+MONGODB_URI="mongodb+srv://anagatuna:Chispi_014@valorant-esports.5gav1ln.mongodb.net/valorantesports?retryWrites=true&w=majority&appName=valorant-esports"
+MONGODB_DB="valorantesports"
+
+REFRESH_SECRET="miclave123"
