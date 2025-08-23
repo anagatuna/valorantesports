@@ -84,5 +84,5 @@ export default function MatchCard({ match, logos = {}, teamList = [] }) {
   );
 
   // Si trae id, hacemos la card navegable
-  return match.id ? <Link href={`/matches/${match.id}`}>{Card}</Link> : Card;
+  return match.id ? <Link href= '#' >{Card}</Link> : Card; {/* Esto va en el href {`/matches/${match.id}}` */}
 }

@@ -1,10 +1,11 @@
+//src/components/ScheduleCard.jsx
 "use client";
 
 import Link from "next/link";
 import Image from "next/image";
 import { classifyTier } from "@/lib/tier";
 
-/* --------- helpers --------- */
+/*  helpers */
 const norm = s => s?.toLowerCase().replace(/[\s\-_\.]+/g,"").trim();
 function findLogo(name, map={}, list=[]){
   const k = norm(name); if(!k) return null;
@@ -71,7 +72,7 @@ function phaseFromEvent(e=""){
   return "MATCH";
 }
 
-/* --------- COMPONENT --------- */
+/*  COMPONENT  */
 export default function ScheduleCard({ match, logos={}, teamList=[] }){
   const [t1,t2] = match.teams ?? [{},{}];
   const wm1 = t1?.name ? findLogo(t1.name, logos, teamList) : null;
@@ -84,77 +85,62 @@ export default function ScheduleCard({ match, logos={}, teamList=[] }){
   const isLive = match.status==="LIVE";
 
   return (
-    <div
-      className="
-        relative w-full overflow-hidden
-        flex h-[88px] items-center md:h-[92px]
-        bg-[#121920] shadow-inner
-      "
-    >
-      {/* capa oscura para contraste */}
-      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.25),transparent,rgba(0,0,0,0.25))] pointer-events-none z-0" />
+    <div className={`sched ${isLive ? "is-live" : ""}`}>
+      {/* overlay suave */}
+      <div className="sched__overlay" />
 
-      {/* watermarks (ahora más visibles) */}
+      {/* watermarks (si hay logos) */}
       {wm1 && (
-        <div className="pointer-events-none absolute inset-y-0 left-0 w-1/3 flex items-center justify-center opacity-20 z-0">
-          <Image src={wm1} alt="" width={160} height={160} unoptimized className="max-h-[72%] w-auto" />
-          <div className="absolute right-0 top-0 h-full w-1/2 bg-gradient-to-l from-transparent to-[#121920]" />
+        <div className="sched__wm sched__wm--left">
+          <Image src={wm1} alt="" width={160} height={160} unoptimized className="sched__wm-img" />
+          <div className="sched__wm-fade sched__wm-fade--left" />
         </div>
       )}
       {wm2 && (
-        <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 flex items-center justify-center opacity-20 z-0">
-          <Image src={wm2} alt="" width={160} height={160} unoptimized className="max-h-[72%] w-auto" />
-          <div className="absolute left-0 top-0 h-full w-1/2 bg-gradient-to-r from-transparent to-[#121920]" />
+        <div className="sched__wm sched__wm--right">
+          <Image src={wm2} alt="" width={160} height={160} unoptimized className="sched__wm-img" />
+          <div className="sched__wm-fade sched__wm-fade--right" />
         </div>
       )}
 
       {/* contenido */}
-      <div className="relative z-10 grid w-full grid-cols-[130px,1fr,160px,1fr,128px] items-center px-4">
-        {/* FECHA/HORA bien visible */}
-        <div className="text-center">
-          <div className="text-[11px] font-semibold tracking-wider text-white/90">
-            {ts ? ddMMM(ts) : "—"}
-          </div>
-          <div className="text-base font-bold text-white leading-tight">
-            {ts ? tHM(ts) : (match.in ?? "—")}
-          </div>
-          <div className="text-[11px] text-white/70">{ts ? tzAbbr(ts) : ""}</div>
+      <div className="sched__grid">
+        {/* fecha / hora */}
+        <div className="time">
+          <div className="time__date">{ts ? ddMMM(ts) : "—"}</div>
+          <div className="time__clock">{ts ? tHM(ts) : (match.in ?? "—")}</div>
+          <div className="time__tz">{ts ? tzAbbr(ts) : ""}</div>
         </div>
 
-        {/* TEAM 1 (sigla + nombre pequeño debajo) */}
-        <div className="min-w-0 text-left">
-          <div className="text-white font-extrabold text-xl leading-none">{abbr(t1?.name ?? "—")}</div>
-          <div className="text-[11px] text-white/70 truncate">{t1?.name ?? "—"}</div>
+        {/* team 1 */}
+        <div className="team team--left">
+          <div className="team__abbr">{abbr(t1?.name ?? "—")}</div>
+          <div className="team__name">{t1?.name ?? "—"}</div>
         </div>
 
-        {/* SCOREBOARD centrado y grande */}
-        <div className="flex flex-col items-center justify-center">
-          <div className="flex items-center gap-4">
-            <span className="w-8 text-center text-white font-extrabold text-2xl">{s1 ?? "–"}</span>
-            <span className="px-2 py-[2px] rounded-full border border-white/20 text-[11px] text-white/90">VS</span>
-            <span className="w-8 text-center text-white font-extrabold text-2xl">{s2 ?? "–"}</span>
+        {/* marcador */}
+        <div className="scorebox">
+          <div className="scorebox__row">
+            <span className="score">{s1 ?? "–"}</span>
+            <span className="vs">VS</span>
+            <span className="score">{s2 ?? "–"}</span>
           </div>
-          <div className="text-[11px] text-white/70 mt-[2px]">
+          <div className="meta-line">
             {phaseFromEvent(match.event)} · {tierLabel(match.event)}
           </div>
         </div>
 
-        {/* TEAM 2 */}
-        <div className="min-w-0 text-right">
-          <div className="text-white font-extrabold text-xl leading-none">{abbr(t2?.name ?? "—")}</div>
-          <div className="text-[11px] text-white/70 truncate">{t2?.name ?? "—"}</div>
+        {/* team 2 */}
+        <div className="team team--right">
+          <div className="team__abbr">{abbr(t2?.name ?? "—")}</div>
+          <div className="team__name">{t2?.name ?? "—"}</div>
         </div>
 
-        {/* STATUS + CTA */}
-        <div className="flex flex-col items-end gap-1">
-          <span className={`text-[12px] font-semibold ${isLive ? "text-red-400" : "text-white/80"}`}>
-            {statusText(match)}
-          </span>
+        {/* estado + CTA */}
+        <div className="cta">
+          <span className="cta__status">{statusText(match)}</span>
           {match.id && (
-            <Link
-              href={`/matches/${match.id}`}
-              className="px-3 py-1.5 rounded-md text-[12px] font-semibold border border-white/25 bg-white/10 hover:bg-white/15 transition"
-            >
+            <Link href= '#' className="cta__btn"> {/* Esto va en el href {`/matches/${match.id}}` */}
               More info
             </Link>
           )}
