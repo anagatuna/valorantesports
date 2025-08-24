@@ -3,10 +3,6 @@
     {
       "path": "/api/refresh?key=miclave123",
       "schedule": "*/15 * * * *"
-    },
-    {
-      "path": "/api/admin/refresh-matches",
-      "schedule": "*/2 * * * *"
     }
   ]
 }
