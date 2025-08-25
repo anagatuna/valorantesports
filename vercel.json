@@ -1,8 +1,5 @@
 {
   "crons": [
-    {
-      "path": "/api/refresh?key=miclave123",
-      "schedule": "*/15 * * * *"
-    }
+    { "path": "/api/refresh?key=miclave123", "schedule": "*/15 * * * *" }
   ]
 }
