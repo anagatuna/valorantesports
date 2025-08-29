@@ -144,25 +144,18 @@ main {
   }
 }
 
-/* ===== Navbar ===== */
 :root {
-  --bar-h: 60px;
-  /* un poco más baja como la ref */
-  --bar-slash: 40px;
-  /* extremos \   / más largos */
-  --chip-w: 330px;
-  /* PLAY más ancho (texto respira) */
-  --shoulder-w: 48px;
-  /* hombros MÁS angostos */
-  --shoulder-cut: 46px;
-  /* y MÁS profundos (se ve la V marcada) */
+  --bar-h: 60px;        /* un poco más baja como la ref */
+  --bar-slash: 40px;    /* extremos \ / más largos */
+  --chip-w: 330px;      /* PLAY más ancho (texto respira) */
+  --shoulder-w: 48px;   /* hombros MÁS angostos */
+  --shoulder-cut: 46px; /* y MÁS profundos (se ve la V marcada) */
 
   /* Rojo de la BARRA (menos saturado) */
   --bar-red-top: #b33a42;
   --bar-red-mid: #8f2d35;
   --bar-red-bot: #54171d;
   --bar-tint: .80;
-  /* ⬅️ 0.6–0.9: menor = menos rojo */
 
   /* sombras laterales un poco más suaves */
   --edge-dark: rgba(0, 0, 0, .25);
@@ -170,32 +163,49 @@ main {
   --edge-w: 12%;
 
   /* Rojo tipo Valorant para el PLAY */
-  --play-top: #d63a46;
-  /* arriba (ligeramente más claro) */
-  --play-mid: #d63a46;
-  /* centro */
-  --play-bot: #d63a46;
-  /* abajo (un toque más oscuro) */
+  --play-top: #d63a46;  /* arriba (ligeramente más claro) */
+  --play-mid: #d63a46;  /* centro */
+  --play-bot: #d63a46;  /* abajo (un toque más oscuro) */
 
-  /* === Hover estilo Valorant sobre TU navbar actual === */
-  --nav-accent: #37E6D9;
-  /* color turquesa */
+  /* Hover estilo Valorant sobre TU navbar actual === */
+  --nav-accent: #37E6D9; /* color turquesa */
+
   --underline-y: 6px;
   /* separación del subrayado respecto al borde inferior */
-  --underline-slope: 12px;
-  /* tamaño de la punta diagonal */
+  --underline-slope: 12px;  /* tamaño de la punta diagonal */
 
+  --chip-active-solid: #6e1819;
+}
 
-  /* Asegura que el CHIP quede por encima de los hombros */
-  .valo-center {
-    z-index: 4;
-  }
+/* Los <li> internos de cada lado */
+.side-list {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
 
-  /* chip / botón */
-  .valo-bar::before,
-  .valo-bar::after {
-    z-index: 2;
-  }
+.side-list>li {
+  list-style: none;
+}
+
+/* Como .valo-bar es un <ul> */
+.valo-bar {
+  list-style: none;
+  margin: 0;
+  padding: 0 18px;
+}
+
+/* Asegura que el CHIP quede por encima de los hombros */
+.valo-center {
+  z-index: 4;
+}
+
+/* chip / botón */
+.valo-bar::before,
+.valo-bar::after {
+  z-index: 2;
 }
 
 /* Contenedor arriba y centrado */
@@ -226,13 +236,13 @@ main {
   gap: 48px;
   border-radius: 0;
   clip-path: polygon(0 0,
-      /* esquina arriba-izq recta (\)  */
+      /* esquina arriba-izq recta (\) */
       100% 0,
       /* esquina arriba-der recta (/) */
       calc(100% - var(--bar-slash)) 100%,
-      /* corte abajo-derecha           */
+      /* corte abajo-derecha */
       var(--bar-slash) 100%
-      /* corte abajo-izquierda         */
+      /* corte abajo-izquierda */
     );
   overflow: visible;
 }
@@ -245,7 +255,7 @@ main {
   z-index: 1;
 }
 
-/* antes: .valo-side li a {}  */
+/* antes: .valo-side li a {} */
 .valo-side a {
   display: block;
   padding: 8px 12px;
@@ -258,21 +268,30 @@ main {
   transition: color .18s ease;
 }
 
-.valo-side a:hover{ color: var(--nav-accent); }
+.valo-side a:hover {
+  color: var(--nav-accent);
+}
 
-.valo-side a::after{
-  content:"";
-  position:absolute;
-  left:8px; right:8px; bottom:6px;   /* baja/sube la línea con este valor */
-  height:2px;                        /* delgada */
+.valo-side a::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 6px;
+  /* baja/sube la línea con este valor */
+  height: 2px;
+  /* delgada */
   background: var(--nav-accent);
   border-radius: 2px;
   transform: scaleX(0);
   transform-origin: 50% 100%;
   transition: transform .18s ease;
-  box-shadow: 0 0 5px rgba(55,230,217,.35);
+  box-shadow: 0 0 5px rgba(55, 230, 217, .35);
 }
-.valo-side a:hover::after{ transform: scaleX(1); }
+
+.valo-side a:hover::after {
+  transform: scaleX(1);
+}
 
 /* UL limpio */
 .valo-bar {
@@ -304,11 +323,17 @@ main {
   justify-self: start;
 }
 
-/* (opcional) marca activo si usas .active o aria-current */
-.valo-side a.active,
-.valo-side a[aria-current="page"]{ color: var(--nav-accent); }
-.valo-side a.active::after,
-.valo-side a[aria-current="page"]::after{ transform: scaleX(1); }
+/* texto y subrayado de los links laterales cuando están activos */
+.valo-side a.is-active,
+.valo-side a[aria-current="page"] {
+  color: var(--nav-accent);
+}
+
+.valo-side a.is-active::after,
+.valo-side a[aria-current="page"]::after {
+  transform: scaleX(1);
+}
+
 /* Botón central RECTO (se integra a la barra) */
 .valo-center {
   position: absolute;
@@ -320,69 +345,66 @@ main {
 }
 
 /* --- PLAY chip: rojo base --- */
-.play-chip{
+.play-chip {
   position: relative;
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: var(--chip-w);
   height: var(--bar-h);
-  line-height: var(--bar-h);
+  line-height: 1;          /* <- importante para el centrado real */
   text-align: center;
-  font-size: 1.4rem; 
+  font-size: 1.4rem;
+  letter-spacing: .1em;
+  font-weight: 800;
+
 
   /* rojo plano + brillo muy leve arriba */
-  background:
-    linear-gradient(180deg, rgba(255,255,255,.08) 0%, rgba(255,255,255,0) 14%),
-    linear-gradient(180deg, var(--play-top) 0%, var(--play-mid) 60%, var(--play-bot) 100%);
-
-  border-top: 1px solid rgba(255,255,255,.06);
-  border-bottom: 1px solid rgba(0,0,0,.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .08) 0%, rgba(255, 255, 255, 0) 14%), linear-gradient(180deg, var(--play-top) 0%, var(--play-mid) 60%, var(--play-bot) 100%);
+  border-top: 1px solid rgba(255, 255, 255, .06);
+  border-bottom: 1px solid rgba(0, 0, 0, .08);
   box-shadow: none;
-
-  /* forma \   / */
+  /* forma \ / */
   clip-path: polygon(0 0, 100% 0, calc(100% - var(--bar-slash)) 100%, var(--bar-slash) 100%);
-
   /* animaciones */
-  transition:
-    background .39s ease,
-    color .18s ease,
-    border-color .30s ease,
-    transform .18s ease;
+  transition: background .39s ease, color .18s ease, border-color .30s ease, transform .18s ease;
 }
 
 /* estira solo las letras, no el chip */
 .play-label{
   display: inline-block;
-  transform: scaleY(1.14);     /* 1.10–1.18 */
-  transform-origin: center;
+  transform: scaleY(1.12);   /* 1.10–1.18 a gusto */
+  font-weight: 800;
   letter-spacing: .1em;
-  font-weight: 900;
+  font-size: 1.4rem;
 }
 
 /* --- Hover: blanco con texto negro --- */
-.play-chip:hover{
+.play-chip:hover {
   background: linear-gradient(180deg, #ffffff 0%, #f6f6f6 70%, #ececec 100%);
   color: #111;
-  border-top: 1px solid rgba(0,0,0,.06);
-  border-bottom: 1px solid rgba(0,0,0,.18);
-  transform: translateY(-1px);
+  border-top: 1px solid rgba(0, 0, 0, .06);
+  border-bottom: 1px solid rgba(0, 0, 0, .18);
 }
 
 /* Línea sutil inferior (se oscurece en hover) */
-.play-chip::after{
+.play-chip::after {
   content: "";
   position: absolute;
   left: 10%;
   right: 10%;
   bottom: -1px;
   height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .35), transparent);
   opacity: .5;
   pointer-events: none;
 }
-.play-chip:hover::after{
-  background: linear-gradient(90deg, transparent, rgba(0,0,0,.25), transparent);
+
+.play-chip:hover::after {
+  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, .25), transparent);
   opacity: .35;
 }
+
 /* overlays oscuros por ENCIMA del chip */
 .valo-bar::before,
 .valo-bar::after {
@@ -402,7 +424,21 @@ main {
   transform: scaleX(-1);
 }
 
-/* derecho */
+/* activo: tono plano con un toque translúcido */
+.play-chip.is-active{
+  background: var(--chip-active-solid);
+  color: #ffffff98;
+  border-top: 1px solid rgba(255,255,255,.06);
+  border-bottom: 1px solid rgba(0,0,0,.18);
+  box-shadow: none;
+}
+
+/* el hover no debe cambiar cuando está activo */
+.play-chip.is-active:hover{
+  background: var(--chip-active-solid);
+  color: #ffffff8f;
+  transform: none;
+}
 
 /* —— Responsive (puedes ajustar los números a tu gusto) —— */
 @media (max-width:1024px) {
