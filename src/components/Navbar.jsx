@@ -25,7 +25,7 @@ export default function Navbar() {
 
         {/* Botón PLAY (posicionado absoluto, arriba del spacer) */}
         <li className="valo-center">
-          <Link href="/" className="play-chip">HOME</Link>
+          <Link href="/" className="play-chip"><span className="play-label">HOME</span></Link>
         </li>
       </ul>
     </nav>

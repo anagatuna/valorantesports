@@ -19,7 +19,8 @@
   }
 }
 
-html, body {
+html,
+body {
   background: var(--background);
   color: var(--foreground);
   font-family: Tungsten-Bold, "Riot Sans", sans-serif;
@@ -30,7 +31,8 @@ html, body {
 
 /* Evitar que el navbar fijo tape el contenido */
 main {
-  padding-top: calc(var(--bar-h) + .1px); /* altura navbar + margen extra */
+  padding-top: calc(var(--bar-h) + .1px);
+  /* altura navbar + margen extra */
 }
 
 /* Fondo */
@@ -41,7 +43,7 @@ main {
   /* para controlar las capas */
   color: #fff;
   overflow-x: hidden;
-  overflow-y: visible; 
+  overflow-y: visible;
 
   /* Fondo con imagen */
   background-image: url("/vct-fondo.png");
@@ -143,28 +145,57 @@ main {
 }
 
 /* ===== Navbar ===== */
-:root{
-  --bar-h: 60px;         /* un poco más baja como la ref */
-  --bar-slash: 40px;     /* extremos \   / más largos */
-  --chip-w: 300px;       /* PLAY más ancho (texto respira) */
-  --shoulder-w: 62px;    /* hombros MÁS angostos */
-  --shoulder-cut: 42px;  /* y MÁS profundos (se ve la V marcada) */
+:root {
+  --bar-h: 60px;
+  /* un poco más baja como la ref */
+  --bar-slash: 40px;
+  /* extremos \   / más largos */
+  --chip-w: 330px;
+  /* PLAY más ancho (texto respira) */
+  --shoulder-w: 48px;
+  /* hombros MÁS angostos */
+  --shoulder-cut: 46px;
+  /* y MÁS profundos (se ve la V marcada) */
 
   /* Rojo de la BARRA (menos saturado) */
   --bar-red-top: #b33a42;
   --bar-red-mid: #8f2d35;
   --bar-red-bot: #54171d;
-  --bar-tint: .80;          /* ⬅️ 0.6–0.9: menor = menos rojo */
+  --bar-tint: .80;
+  /* ⬅️ 0.6–0.9: menor = menos rojo */
 
   /* sombras laterales un poco más suaves */
-  --edge-dark: rgba(0,0,0,.25);
-  --edge-soft: rgba(0,0,0,.10);
+  --edge-dark: rgba(0, 0, 0, .25);
+  --edge-soft: rgba(0, 0, 0, .10);
   --edge-w: 12%;
 
   /* Rojo tipo Valorant para el PLAY */
-  --play-top:   #d63a46;  /* arriba (ligeramente más claro) */
-  --play-mid:   #d63a46;  /* centro */
-  --play-bot:   #d63a46;  /* abajo (un toque más oscuro) */
+  --play-top: #d63a46;
+  /* arriba (ligeramente más claro) */
+  --play-mid: #d63a46;
+  /* centro */
+  --play-bot: #d63a46;
+  /* abajo (un toque más oscuro) */
+
+  /* === Hover estilo Valorant sobre TU navbar actual === */
+  --nav-accent: #37E6D9;
+  /* color turquesa */
+  --underline-y: 6px;
+  /* separación del subrayado respecto al borde inferior */
+  --underline-slope: 12px;
+  /* tamaño de la punta diagonal */
+
+
+  /* Asegura que el CHIP quede por encima de los hombros */
+  .valo-center {
+    z-index: 4;
+  }
+
+  /* chip / botón */
+  .valo-bar::before,
+  .valo-bar::after {
+    z-index: 2;
+  }
 }
 
 /* Contenedor arriba y centrado */
@@ -188,17 +219,20 @@ main {
   backdrop-filter: none;
   background: #a81318;
   background: radial-gradient(circle, rgba(168, 19, 24, 1) 0%, rgba(81, 26, 26, 1) 76%);
-  border: 1px solid rgba(255,255,255,.06);
-  box-shadow: 0 12px 36px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04);
+  border: 1px solid rgba(255, 255, 255, .06);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .04);
   padding: 0 18px;
   color: #eaeaea;
   gap: 48px;
   border-radius: 0;
-  clip-path: polygon(
-    0 0,                                 /* esquina arriba-izq recta (\)  */
-    100% 0,                              /* esquina arriba-der recta (/) */
-    calc(100% - var(--bar-slash)) 100%,  /* corte abajo-derecha           */
-    var(--bar-slash) 100%                /* corte abajo-izquierda         */
+  clip-path: polygon(0 0,
+      /* esquina arriba-izq recta (\)  */
+      100% 0,
+      /* esquina arriba-der recta (/) */
+      calc(100% - var(--bar-slash)) 100%,
+      /* corte abajo-derecha           */
+      var(--bar-slash) 100%
+      /* corte abajo-izquierda         */
     );
   overflow: visible;
 }
@@ -206,12 +240,13 @@ main {
 /* Lados (links) */
 .valo-side {
   display: flex;
-  gap: 12px ;
+  gap: 12px;
   align-items: center;
   z-index: 1;
 }
 
-.valo-side li a {
+/* antes: .valo-side li a {}  */
+.valo-side a {
   display: block;
   padding: 8px 12px;
   border-radius: 8px;
@@ -219,39 +254,61 @@ main {
   color: #eaeaea;
   white-space: nowrap;
   transition: .18s ease;
+  position: relative;
+  transition: color .18s ease;
 }
 
-.valo-side li a:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, .06);
-}
+.valo-side a:hover{ color: var(--nav-accent); }
 
-/* antes: .valo-side li a {}  */
-.valo-side a{
-  display:block;
-  padding:8px 12px;
-  border-radius:8px;
-  font-weight:700;
-  color:#eaeaea;
-  white-space:nowrap;
-  transition:.18s ease;
+.valo-side a::after{
+  content:"";
+  position:absolute;
+  left:8px; right:8px; bottom:6px;   /* baja/sube la línea con este valor */
+  height:2px;                        /* delgada */
+  background: var(--nav-accent);
+  border-radius: 2px;
+  transform: scaleX(0);
+  transform-origin: 50% 100%;
+  transition: transform .18s ease;
+  box-shadow: 0 0 5px rgba(55,230,217,.35);
 }
-.valo-side a:hover{ color:#fff; background:rgba(255,255,255,.06); }
+.valo-side a:hover::after{ transform: scaleX(1); }
 
 /* UL limpio */
-.valo-bar{ list-style:none; margin:0; padding:0 18px; }
+.valo-bar {
+  list-style: none;
+  margin: 0;
+  padding: 0 18px;
+}
 
 /* 3 columnas: [izq][ PLAY+hombros ][der] */
-.valo-bar{
-  display:grid;
+.valo-bar {
+  display: grid;
   grid-template-columns: 1fr calc(var(--chip-w) + 2 * var(--shoulder-w)) 1fr;
-  align-items:center;
-  gap: 0;                
+  align-items: center;
+  gap: 0;
 }
-.valo-side{ display:flex; gap:10px; align-items:center; z-index:1; }
-.valo-side.left{  justify-self:end; }
-.valo-side.right{ justify-self:start; }
 
+.valo-side {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  z-index: 1;
+}
+
+.valo-side.left {
+  justify-self: end;
+}
+
+.valo-side.right {
+  justify-self: start;
+}
+
+/* (opcional) marca activo si usas .active o aria-current */
+.valo-side a.active,
+.valo-side a[aria-current="page"]{ color: var(--nav-accent); }
+.valo-side a.active::after,
+.valo-side a[aria-current="page"]::after{ transform: scaleX(1); }
 /* Botón central RECTO (se integra a la barra) */
 .valo-center {
   position: absolute;
@@ -262,50 +319,73 @@ main {
   z-index: 2;
 }
 
-.play-chip {
-  display:block;
-  width:var(--chip-w);
-  height:var(--bar-h);
-  line-height:var(--bar-h);
-  text-align:center;
-  font-weight:900;
-  font-size: 1.2rem;
-  letter-spacing:.15em;
-  text-transform:uppercase;
-  color:#fff;
+/* --- PLAY chip: rojo base --- */
+.play-chip{
+  position: relative;
+  display: block;
+  width: var(--chip-w);
+  height: var(--bar-h);
+  line-height: var(--bar-h);
+  text-align: center;
+  font-size: 1.4rem; 
 
-  /* brillo MUY leve arriba + gradiente rojo plano */
+  /* rojo plano + brillo muy leve arriba */
   background:
     linear-gradient(180deg, rgba(255,255,255,.08) 0%, rgba(255,255,255,0) 14%),
     linear-gradient(180deg, var(--play-top) 0%, var(--play-mid) 60%, var(--play-bot) 100%);
 
-  /* bordes casi invisibles (la 1ª imagen no tiene líneas fuertes) */
   border-top: 1px solid rgba(255,255,255,.06);
   border-bottom: 1px solid rgba(0,0,0,.08);
-
-  /* quita los brillos internos antiguos si los tenías */
   box-shadow: none;
-  /* mantiene la forma \   / que ya usas con clip-path */
+
+  /* forma \   / */
   clip-path: polygon(0 0, 100% 0, calc(100% - var(--bar-slash)) 100%, var(--bar-slash) 100%);
+
+  /* animaciones */
+  transition:
+    background .39s ease,
+    color .18s ease,
+    border-color .30s ease,
+    transform .18s ease;
 }
 
-.play-chip:hover {
+/* estira solo las letras, no el chip */
+.play-label{
+  display: inline-block;
+  transform: scaleY(1.14);     /* 1.10–1.18 */
+  transform-origin: center;
+  letter-spacing: .1em;
+  font-weight: 900;
+}
+
+/* --- Hover: blanco con texto negro --- */
+.play-chip:hover{
+  background: linear-gradient(180deg, #ffffff 0%, #f6f6f6 70%, #ececec 100%);
+  color: #111;
+  border-top: 1px solid rgba(0,0,0,.06);
+  border-bottom: 1px solid rgba(0,0,0,.18);
   transform: translateY(-1px);
-  filter: brightness(1.06);
 }
 
-/* “línea” muy sutil bajo el chip (como glow de la ref) */
+/* Línea sutil inferior (se oscurece en hover) */
 .play-chip::after{
-  content:"";
-  position:absolute; left:10%; right:10%; bottom:-1px; height:2px;
+  content: "";
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  bottom: -1px;
+  height: 2px;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent);
-  opacity:.5;
-  pointer-events:none;
+  opacity: .5;
+  pointer-events: none;
 }
-
+.play-chip:hover::after{
+  background: linear-gradient(90deg, transparent, rgba(0,0,0,.25), transparent);
+  opacity: .35;
+}
 /* overlays oscuros por ENCIMA del chip */
 .valo-bar::before,
-.valo-bar::after{
+.valo-bar::after {
   z-index: 3;
   width: var(--shoulder-w);
   clip-path: polygon(0 0, 100% 0, calc(100% - var(--shoulder-cut)) 50%, 100% 100%, 0 100%);
@@ -313,9 +393,14 @@ main {
 }
 
 /* pegados a los bordes del chip */
-.valo-bar::before{ left: calc(50% - var(--chip-w)/2 - var(--shoulder-w)); }
-.valo-bar::after{  left: calc(50% + var(--chip-w)/2); transform: scaleX(-1); }
+.valo-bar::before {
+  left: calc(50% - var(--chip-w)/2 - var(--shoulder-w));
+}
 
+.valo-bar::after {
+  left: calc(50% + var(--chip-w)/2);
+  transform: scaleX(-1);
+}
 
 /* derecho */
 
@@ -353,112 +438,253 @@ main {
 }
 
 /* ====== vars ====== */
-:root{
+:root {
   --bg-card: #121920;
   --ink: #fff;
-  --ink-dim: rgba(255,255,255,.8);
-  --ink-soft: rgba(255,255,255,.7);
-  --line: rgba(255,255,255,.25);
+  --ink-dim: rgba(255, 255, 255, .8);
+  --ink-soft: rgba(255, 255, 255, .7);
+  --line: rgba(255, 255, 255, .25);
   --accent: #ff4d4d;
 }
 
 /* ====== card ====== */
-.sched{
+.sched {
   position: relative;
   width: 100%;
   overflow: hidden;
   display: flex;
   align-items: center;
-  height: 92px; /* md:h-[92px] */
+  height: 92px;
+  /* md:h-[92px] */
   background: var(--bg-card);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
 }
-.sched__overlay{
-  position: absolute; inset: 0;
-  background: linear-gradient(90deg, rgba(0,0,0,.25), transparent, rgba(0,0,0,.25));
-  pointer-events: none; z-index: 0;
+
+.sched__overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(0, 0, 0, .25), transparent, rgba(0, 0, 0, .25));
+  pointer-events: none;
+  z-index: 0;
 }
 
 /* watermarks */
-.sched__wm{
-  position: absolute; inset-y: 0;
-  display: flex; align-items: center; justify-content: center;
-  width: 33.333%; opacity: .2; z-index: 0; pointer-events: none;
+.sched__wm {
+  position: absolute;
+  inset-y: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 33.333%;
+  opacity: .2;
+  z-index: 0;
+  pointer-events: none;
 }
-.sched__wm--left{ left: 0; }
-.sched__wm--right{ right: 0; }
-.sched__wm-img{ max-height: 72%; width: auto; }
-.sched__wm-fade{
-  position: absolute; top: 0; height: 100%; width: 50%;
+
+.sched__wm--left {
+  left: 0;
 }
-.sched__wm-fade--left{ right: 0; background: linear-gradient(to left, transparent, var(--bg-card)); }
-.sched__wm-fade--right{ left: 0; background: linear-gradient(to right, transparent, var(--bg-card)); }
+
+.sched__wm--right {
+  right: 0;
+}
+
+.sched__wm-img {
+  max-height: 72%;
+  width: auto;
+}
+
+.sched__wm-fade {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 50%;
+}
+
+.sched__wm-fade--left {
+  right: 0;
+  background: linear-gradient(to left, transparent, var(--bg-card));
+}
+
+.sched__wm-fade--right {
+  left: 0;
+  background: linear-gradient(to right, transparent, var(--bg-card));
+}
 
 /* grid content */
-.sched__grid{
-  position: relative; z-index: 10;
-  display: grid; align-items: center;
+.sched__grid {
+  position: relative;
+  z-index: 10;
+  display: grid;
+  align-items: center;
   grid-template-columns: 130px 1fr 160px 1fr 128px;
-  width: 100%; padding: 0 16px;
+  width: 100%;
+  padding: 0 16px;
 }
 
 /* time block */
-.time{ text-align: center; color: var(--ink); }
-.time__date{
-  font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--ink-dim);
+.time {
+  text-align: center;
+  color: var(--ink);
 }
-.time__clock{ font-size: 1rem; font-weight: 800; line-height: 1; }
-.time__tz{ font-size: 11px; color: var(--ink-soft); }
+
+.time__date {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: var(--ink-dim);
+}
+
+.time__clock {
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.time__tz {
+  font-size: 11px;
+  color: var(--ink-soft);
+}
 
 /* team */
-.team{ min-width: 0; }
-.team--left{ text-align: left; }
-.team--right{ text-align: right; }
-.team__abbr{ color: var(--ink); font-weight: 900; font-size: 1.25rem; line-height: 1; }
-.team__name{ color: var(--ink-soft); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.team {
+  min-width: 0;
+}
+
+.team--left {
+  text-align: left;
+}
+
+.team--right {
+  text-align: right;
+}
+
+.team__abbr {
+  color: var(--ink);
+  font-weight: 900;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.team__name {
+  color: var(--ink-soft);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* scoreboard */
-.scorebox{ display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.scorebox__row{ display: flex; align-items: center; gap: 16px; }
-.score{ width: 32px; text-align: center; color: var(--ink); font-weight: 900; font-size: 1.25rem; }
-.vs{
-  font-size: 11px; color: var(--ink-dim); border: 1px solid rgba(255,255,255,.2);
-  border-radius: 999px; padding: 2px 8px; background: rgba(255,255,255,.1);
+.scorebox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
-.meta-line{ margin-top: 2px; font-size: 11px; color: var(--ink-soft); }
+
+.scorebox__row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.score {
+  width: 32px;
+  text-align: center;
+  color: var(--ink);
+  font-weight: 900;
+  font-size: 1.25rem;
+}
+
+.vs {
+  font-size: 11px;
+  color: var(--ink-dim);
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, .1);
+}
+
+.meta-line {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
 
 /* status + CTA */
-.cta{ display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-.cta__status{ font-size: 12px; font-weight: 700; color: var(--ink-dim); }
-.is-live .cta__status{ color: var(--accent); }
-.cta__btn{
-  font-size: 12px; font-weight: 700; color: var(--ink);
-  padding: 6px 12px; border: 1px solid rgba(255,255,255,.25); border-radius: 8px;
-  background: rgba(255,255,255,.1); transition: background .2s ease;
+.cta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
 }
-.cta__btn:hover{ background: rgba(255,255,255,.15); }
+
+.cta__status {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-dim);
+}
+
+.is-live .cta__status {
+  color: var(--accent);
+}
+
+.cta__btn {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, .25);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .1);
+  transition: background .2s ease;
+}
+
+.cta__btn:hover {
+  background: rgba(255, 255, 255, .15);
+}
 
 /* responsive */
-@media (max-width: 820px){
-  .sched__grid{ grid-template-columns: 110px 1fr 140px 1fr 110px; }
-  .score{ width: 28px; }
+@media (max-width: 820px) {
+  .sched__grid {
+    grid-template-columns: 110px 1fr 140px 1fr 110px;
+  }
+
+  .score {
+    width: 28px;
+  }
 }
-@media (max-width: 640px){
-  .sched{ height: 88px; }
-  .sched__grid{ grid-template-columns: 96px 1fr 120px 1fr 96px; padding: 0 12px; }
-  .team__abbr{ font-size: 1.1rem; }
-  .score{ width: 26px; font-size: 1.1rem; }
+
+@media (max-width: 640px) {
+  .sched {
+    height: 88px;
+  }
+
+  .sched__grid {
+    grid-template-columns: 96px 1fr 120px 1fr 96px;
+    padding: 0 12px;
+  }
+
+  .team__abbr {
+    font-size: 1.1rem;
+  }
+
+  .score {
+    width: 26px;
+    font-size: 1.1rem;
+  }
 }
 
 /* contenedor principal */
 .home-matches {
   display: flex;
   flex-direction: column;
-  gap: 40px; /* space-y-10 */
+  gap: 40px;
+  /* space-y-10 */
 }
 
 /* cada bloque (upcoming/completed) */
-.block { 
+.block {
   margin-bottom: .1rem;
 }
 
@@ -469,6 +695,7 @@ main {
   justify-content: space-between;
   margin-bottom: .1rem;
 }
+
 .block__title {
   color: #fff;
 }
@@ -482,5 +709,5 @@ main {
 
 /* mensajes vacíos */
 .block__empty {
-  color: rgba(255,255,255,.7);
+  color: rgba(255, 255, 255, .7);
 }
