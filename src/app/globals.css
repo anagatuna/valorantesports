@@ -475,7 +475,7 @@ main {
 
 /* ====== vars ====== */
 :root {
-  --bg-card: #121920;
+  --bg-card: #2f1214a8;
   --ink: #fff;
   --ink-dim: rgba(255, 255, 255, .8);
   --ink-soft: rgba(255, 255, 255, .7);
