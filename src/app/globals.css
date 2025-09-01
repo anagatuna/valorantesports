@@ -145,11 +145,16 @@ main {
 }
 
 :root {
-  --bar-h: 60px;        /* un poco más baja como la ref */
-  --bar-slash: 40px;    /* extremos \ / más largos */
-  --chip-w: 330px;      /* PLAY más ancho (texto respira) */
-  --shoulder-w: 48px;   /* hombros MÁS angostos */
-  --shoulder-cut: 46px; /* y MÁS profundos (se ve la V marcada) */
+  --bar-h: 60px;
+  /* un poco más baja como la ref */
+  --bar-slash: 40px;
+  /* extremos \ / más largos */
+  --chip-w: 330px;
+  /* PLAY más ancho (texto respira) */
+  --shoulder-w: 48px;
+  /* hombros MÁS angostos */
+  --shoulder-cut: 46px;
+  /* y MÁS profundos (se ve la V marcada) */
 
   /* Rojo de la BARRA (menos saturado) */
   --bar-red-top: #b33a42;
@@ -163,16 +168,21 @@ main {
   --edge-w: 12%;
 
   /* Rojo tipo Valorant para el PLAY */
-  --play-top: #d63a46;  /* arriba (ligeramente más claro) */
-  --play-mid: #d63a46;  /* centro */
-  --play-bot: #d63a46;  /* abajo (un toque más oscuro) */
+  --play-top: #d63a46;
+  /* arriba (ligeramente más claro) */
+  --play-mid: #d63a46;
+  /* centro */
+  --play-bot: #d63a46;
+  /* abajo (un toque más oscuro) */
 
   /* Hover estilo Valorant sobre TU navbar actual === */
-  --nav-accent: #37E6D9; /* color turquesa */
+  --nav-accent: #37E6D9;
+  /* color turquesa */
 
   --underline-y: 6px;
   /* separación del subrayado respecto al borde inferior */
-  --underline-slope: 12px;  /* tamaño de la punta diagonal */
+  --underline-slope: 12px;
+  /* tamaño de la punta diagonal */
 
   --chip-active-solid: #6e1819;
 }
@@ -195,6 +205,10 @@ main {
   list-style: none;
   margin: 0;
   padding: 0 18px;
+  display: grid !important;
+  grid-template-columns: 1fr calc(var(--chip-w) + 2 * var(--shoulder-w)) 1fr;
+  align-items: center;
+  gap: 0;
 }
 
 /* Asegura que el CHIP quede por encima de los hombros */
@@ -315,13 +329,9 @@ main {
   z-index: 1;
 }
 
-.valo-side.left {
-  justify-self: end;
-}
-
-.valo-side.right {
-  justify-self: start;
-}
+/* asigna cada bloque a su columna */
+.valo-side.left  { grid-column: 1; justify-self: end;  }
+.valo-side.right { grid-column: 3; justify-self: start; }
 
 /* texto y subrayado de los links laterales cuando están activos */
 .valo-side a.is-active,
@@ -352,7 +362,8 @@ main {
   justify-content: center;
   width: var(--chip-w);
   height: var(--bar-h);
-  line-height: 1;          /* <- importante para el centrado real */
+  line-height: 1;
+  /* <- importante para el centrado real */
   text-align: center;
   font-size: 1.4rem;
   letter-spacing: .1em;
@@ -371,9 +382,10 @@ main {
 }
 
 /* estira solo las letras, no el chip */
-.play-label{
+.play-label {
   display: inline-block;
-  transform: scaleY(1.12);   /* 1.10–1.18 a gusto */
+  transform: scaleY(1.12);
+  /* 1.10–1.18 a gusto */
   font-weight: 800;
   letter-spacing: .1em;
   font-size: 1.4rem;
@@ -425,52 +437,163 @@ main {
 }
 
 /* activo: tono plano con un toque translúcido */
-.play-chip.is-active{
+.play-chip.is-active {
   background: var(--chip-active-solid);
   color: #ffffff98;
-  border-top: 1px solid rgba(255,255,255,.06);
-  border-bottom: 1px solid rgba(0,0,0,.18);
+  border-top: 1px solid rgba(255, 255, 255, .06);
+  border-bottom: 1px solid rgba(0, 0, 0, .18);
   box-shadow: none;
 }
 
 /* el hover no debe cambiar cuando está activo */
-.play-chip.is-active:hover{
+.play-chip.is-active:hover {
   background: var(--chip-active-solid);
   color: #ffffff8f;
   transform: none;
 }
 
-/* —— Responsive (puedes ajustar los números a tu gusto) —— */
-@media (max-width:1024px) {
-  :root {
-    --chip-w: 250px;
-    --shoulder-w: 82px;
-    --shoulder-cut: 24px;
-    --bar-h: 60px;
-  }
+/* =========================
+   Burger + Drawer (móvil)
+========================= */
+.valo-burger-fixed {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+
+  display: none; /* visible solo <900px */
+  align-items: center;
+  justify-content: center;
+
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.08);
+  z-index: 100;
+}
+.valo-burger-fixed span,
+.valo-burger-fixed span::before,
+.valo-burger-fixed span::after {
+  content: "";
+  display: block;
+  width: 22px;
+  height: 2px;
+  background: #fff;
+  position: relative;
+  transition: transform .25s ease, background .2s;
+}
+.valo-burger-fixed span::before { position: absolute; top: -6px; left: 0; }
+.valo-burger-fixed span::after  { position: absolute; top:  6px; left: 0; }
+
+.valo-burger-fixed[aria-expanded="true"] span { background: transparent; }
+.valo-burger-fixed[aria-expanded="true"] span::before { transform: translateY(6px) rotate(45deg); }
+.valo-burger-fixed[aria-expanded="true"] span::after  { transform: translateY(-6px) rotate(-45deg); }
+
+.valo-drawer {
+  display: none; /* visible solo <900px */
 }
 
-@media (max-width:768px) {
-  :root {
-    --chip-w: 220px;
-    --shoulder-w: 74px;
-    --shoulder-cut: 22px;
+@media (max-width: 900px) {
+  .valo-bar { display: none !important; } /* oculta la barra desktop */
+  .valo-burger-fixed { display: flex; }
+
+  .valo-drawer {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    pointer-events: none;
+  }
+  .valo-drawer::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,.45);
+    opacity: 0;
+    transition: opacity .2s ease;
+  }
+  .valo-drawer.is-open { pointer-events: auto; }
+  .valo-drawer.is-open::before { opacity: 1; }
+
+  .drawer-panel {
+    position: absolute;
+    top: 0; left: 0;
+    width: min(86vw, 360px);
+    height: 100dvh;
+    background: linear-gradient(180deg, #5b0f15 0%, #3a0b10 100%);
+    border-right: 1px solid rgba(255,255,255,.08);
+    box-shadow: 0 20px 40px rgba(0,0,0,.4);
+    transform: translateX(-100%);
+    transition: transform .25s ease;
+  }
+  .valo-drawer.is-open .drawer-panel { transform: translateX(0); }
+
+  .drawer-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 16px 14px;
+  }
+  .drawer-list a {
+    padding: 12px 10px;
+    border-radius: 10px;
+    color: #eee;
+    font-weight: 800;
+    text-decoration: none;
+  }
+  .drawer-list a:hover,
+  .drawer-list a.is-active {
+    background: rgba(255,255,255,.08);
+    color: var(--nav-accent);
+  }
+  .drawer-list hr {
+    border: 0;
+    height: 1px;
+    background: rgba(255,255,255,.08);
+    margin: 10px 0;
+  }
+
+  main { padding-top: 12px; } /* evita hueco en móvil */
+}
+
+/* =========================
+   Breakpoints (escalado)
+========================= */
+@media (max-width: 1200px){
+  :root{
+    --chip-w: 300px;
+    --bar-h: 58px;
+    --shoulder-w: 44px;
+    --shoulder-cut: 42px;
+  }
+}
+@media (max-width: 992px){
+  :root{
+    --chip-w: 280px;
     --bar-h: 56px;
+    --shoulder-w: 40px;
+    --shoulder-cut: 38px;
+  }
+  .valo-side a { padding: 7px 10px; }
+}
+@media (max-width: 768px){
+  :root{
+    --chip-w: 240px;
+    --bar-h: 52px;
+    --shoulder-w: 34px;
+    --shoulder-cut: 32px;
+    --bar-slash: 32px;
   }
 }
 
-@media (max-width:480px) {
-  :root {
-    --chip-w: 190px;
-    --shoulder-w: 66px;
-    --shoulder-cut: 20px;
-    --bar-h: 52px;
-  }
-
-  .valo-side.left li:nth-child(3),
-  .valo-side.right li:nth-child(3) {
-    display: none;
-  }
+/* =========================
+   Accesibilidad / Motion
+========================= */
+@media (prefers-reduced-motion: reduce){
+  .valo-side a::after,
+  .play-chip,
+  .drawer-panel,
+  .valo-drawer::before { transition: none !important; }
 }
 
 /* ====== vars ====== */
