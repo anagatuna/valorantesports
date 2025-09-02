@@ -43,7 +43,7 @@ export default function HomeMatches({ today, next, completed }) {
       startTs: Date.now() - 25 * 60 * 1000,
       event: "PLAYOFFS • VCT",
       teams: [
-        { name: "LOUD", score: 2 },
+        { name: "G2 Esports", score: 2 },
         { name: "SENTINELS", score: 10 },
       ],
       in: null, // no necesario en LIVE
