@@ -237,14 +237,16 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
       {/* === FONDO: MAPA (inyectado por HomeMatches) === */}
       {match.mapImage && (
         <div className="sched__bg">
-          <Image
-            src={match.mapImage}
-            alt={match.currentMap || "map"}
-            fill
-            priority={false}
-            className="sched__bg-img"
-          />
-          <div className="sched__bg-fade" />
+          <div className="sched__center">
+            <Image
+              src={match.mapImage}
+              alt={match.currentMap || "map"}
+              fill
+              priority={false}
+              className="sched__center-img"
+            />
+            <span className="sched__center-vignette" />
+          </div>
         </div>
       )}
 
