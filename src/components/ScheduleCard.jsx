@@ -1,4 +1,3 @@
-// src/components/ScheduleCard.jsx
 "use client";
 
 import Link from "next/link";
@@ -7,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { classifyTier } from "@/lib/tier";
 
 /* ===== Helpers deterministas ===== */
-const TIMEZONE = "America/Mexico_City"; // fija para evitar diferencias SSR/cliente
+const TIMEZONE = "America/Mexico_City";
 
 const norm = (s) => s?.toLowerCase().replace(/[\s\-_\.]+/g, "").trim();
 
@@ -70,14 +69,13 @@ function ddMMM(d) {
       day: "2-digit",
       month: "short",
     }).format(d);
-    return s.toUpperCase(); // ej. "01 SEP"
+    return s.toUpperCase();
   } catch {
     return "";
   }
 }
 
 function tzAbbr(d) {
-  // Solo para cliente; abreviaturas pueden variar por ICU.
   try {
     return (
       new Intl.DateTimeFormat("en-US", {
@@ -129,14 +127,12 @@ function phaseFromEvent(e = "") {
 
 /* ===== Componente ===== */
 export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
-  // Evitar hydration: calcular hora/fecha/estado solo en cliente
   const [mounted, setMounted] = useState(false);
   const [now, setNow] = useState(null);
 
   useEffect(() => {
     setMounted(true);
     setNow(Date.now());
-    // refrescar cada minuto para LIVE o countdown
     const id = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(id);
   }, []);
@@ -154,10 +150,10 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
   );
   const isLive = match.status === "LIVE";
 
-  // Strings de tiempo SOLO cuando mounted === true
   const dateStr = mounted && ts ? ddMMM(ts) : "";
   const timeStr = mounted && ts ? tHM(ts) : "";
   const tzStr = mounted && ts ? tzAbbr(ts) : "";
+
   const statusStr = useMemo(() => {
     if (!mounted) return "";
     const nowMs = now ?? Date.now();
@@ -171,35 +167,36 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
     return "FINAL";
   }, [mounted, now, match.status, match.startTs, match.in]);
 
-  return (
+ return (
     <div className={`sched ${isLive ? "is-live" : ""}`}>
-      {/* overlay */}
+      {/* overlay opcional para oscurecer todo ligeramente */}
       <div className="sched__overlay" />
 
-      {/* watermarks (si hay logos) */}
+      {/* === FONDO GLOBAL: MAPA DE LA CARD === */}
+      {match.mapImage && (
+        <div className="sched__bg">
+          <Image
+            src={match.mapImage}
+            alt={match.currentMap || "map"}
+            fill
+            priority={false}
+            className="sched__bg-img"
+          />
+          {/* fade / viñeta para lados y bordes */}
+          <div className="sched__bg-fade" />
+        </div>
+      )}
+
+      {/* watermarks (logos equipos) */}
       {wm1 && (
         <div className="sched__wm sched__wm--left">
-          <Image
-            src={wm1}
-            alt=""
-            width={160}
-            height={160}
-            unoptimized
-            className="sched__wm-img"
-          />
+          <Image src={wm1} alt="" width={160} height={160} unoptimized className="sched__wm-img" />
           <div className="sched__wm-fade sched__wm-fade--left" />
         </div>
       )}
       {wm2 && (
         <div className="sched__wm sched__wm--right">
-          <Image
-            src={wm2}
-            alt=""
-            width={160}
-            height={160}
-            unoptimized
-            className="sched__wm-img"
-          />
+          <Image src={wm2} alt="" width={160} height={160} unoptimized className="sched__wm-img" />
           <div className="sched__wm-fade sched__wm-fade--right" />
         </div>
       )}
@@ -208,15 +205,9 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
       <div className="sched__grid">
         {/* fecha / hora */}
         <div className="time">
-          <div className="time__date" suppressHydrationWarning>
-            {dateStr || "—"}
-          </div>
-          <div className="time__clock" suppressHydrationWarning>
-            {timeStr || match.in || "—"}
-          </div>
-          <div className="time__tz" suppressHydrationWarning>
-            {tzStr}
-          </div>
+          <div className="time__date" suppressHydrationWarning>{dateStr || "—"}</div>
+          <div className="time__clock" suppressHydrationWarning>{timeStr || match.in || "—"}</div>
+          <div className="time__tz" suppressHydrationWarning>{tzStr}</div>
         </div>
 
         {/* team 1 */}
@@ -225,15 +216,17 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
           <div className="team__name">{t1?.name ?? "—"}</div>
         </div>
 
-        {/* marcador */}
+        {/* marcador SIN fondo de mapa */}
         <div className="scorebox">
-          <div className="scorebox__row">
-            <span className="score">{s1 ?? "–"}</span>
-            <span className="vs">VS</span>
-            <span className="score">{s2 ?? "–"}</span>
-          </div>
-          <div className="meta-line">
-            {phaseFromEvent(match.event)} · {tierLabel(match.event)}
+          <div className="scorebox__content">
+            <div className="scorebox__row">
+              <span className="score">{s1 ?? "–"}</span>
+              <span className="vs">VS</span>
+              <span className="score">{s2 ?? "–"}</span>
+            </div>
+            <div className="meta-line">
+              {phaseFromEvent(match.event)} · {tierLabel(match.event)}
+            </div>
           </div>
         </div>
 
@@ -245,14 +238,8 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
 
         {/* estado + CTA */}
         <div className="cta">
-          <span className="cta__status" suppressHydrationWarning>
-            {statusStr}
-          </span>
-          {match.id && (
-            <Link href="#" className="cta__btn">
-              More info
-            </Link>
-          )}
+          <span className="cta__status" suppressHydrationWarning>{statusStr}</span>
+          {match.id && <Link href="#" className="cta__btn">More info</Link>}
         </div>
       </div>
     </div>

@@ -933,3 +933,61 @@ main {
 .block__empty {
   color: rgba(255, 255, 255, .7);
 }
+
+/* IMAGEN CURRENT MAP */
+/* === Fondo del MAPA en toda la card === */
+.sched {
+  isolation: isolate; /* garantiza capas independientes */
+}
+
+.sched__bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;      /* mantiene recorte al borde de la card */
+  pointer-events: none;
+}
+
+.sched__bg-img {
+  position: absolute !important;
+  inset: 0;
+  object-fit: cover;
+  opacity: .28;
+  filter: saturate(.95) contrast(.95);
+
+  /* === zoom extra más allá de la card === */
+  transform: scale(2);     /* 1.0 = igual al alto de la card */
+  transform-origin: center;  /* centrado */
+}
+
+/* estaba en z-index: 0; súbelo para ir encima del fondo */
+.sched__overlay { z-index: 2; }
+
+/* watermarks (logos) por encima del overlay y fondo */
+.sched__wm { z-index: 3; }
+
+/* contenido ya está en 10, perfecto */
+.sched__grid { z-index: 10; }
+
+/* Mantén tu regla original tal cual */
+.sched__bg-img {
+  position: absolute !important;
+  inset: 0;
+  object-fit: contain;   /* o cover según lo que tenías */
+  opacity: .4;
+  filter: brightness(.62) contrast(1.06); /* oscura y un pelín contrastada */
+  
+
+  
+}
+
+/* Overlay y fade encima */
+.sched__bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  
+}
+

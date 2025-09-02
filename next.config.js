@@ -22,6 +22,11 @@ const nextConfig = {
         hostname: 'vlr.gg',
         pathname: '/**',
       },
+      {
+      protocol: 'https',
+      hostname: 'vlrggapi.vercel.app',
+      pathname: '/**',
+      },
     ],
   },
 };

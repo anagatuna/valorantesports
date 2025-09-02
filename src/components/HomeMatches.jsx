@@ -5,6 +5,34 @@ import { useEffect, useMemo, useState } from "react";
 import ScheduleCard from "@/components/ScheduleCard";
 import { loadLogosFromCache, saveLogosToCache } from "@/utils/teamLogoCache";
 
+// 🔹 Diccionario de mapas → imágenes locales (en /public/maps)
+const MAP_IMAGES = {
+  abyss:   "/maps/abyss.webp",
+  ascent:  "/maps/ascent.webp",
+  bind:    "/maps/bind.webp",
+  breeze:  "/maps/breeze.webp",
+  corrode:  "/maps/corrode.webp",
+  fracture:  "/maps/fracture.webp",
+  haven:   "/maps/haven.webp",
+  icebox:  "/maps/icebox.webp",
+  lotus:   "/maps/lotus.webp",
+  pearl:   "/maps/pearl.webp",
+  split:   "/maps/split.webp",
+  sunset:  "/maps/sunset.webp",
+  // fallback opcional
+  unknown: "/maps/unknown.webp",
+};
+
+// Normaliza nombres como "Icebox", "ICE BOX", "ice-box" → "icebox"
+const norm = (s = "") => s.toLowerCase().normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")   // quita acentos
+  .replace(/[^a-z0-9]/g, "");        // compacta
+
+  const resolveMapImage = (mapName) => {
+  const key = norm(mapName);
+  return MAP_IMAGES[key] || MAP_IMAGES.unknown || null;
+};
+
 async function ensureLogosFor(matches) {
   const needed = new Set();
   for (const m of matches) (m.teams || []).forEach(t => t?.name && needed.add(t.name.toLowerCase().trim()));
@@ -36,6 +64,7 @@ export default function HomeMatches({ today, next, completed }) {
 
   // 🔹 Match DEMO: se fija una vez al montar (para que el contador LIVE avance bien)
   const demoLiveMatch = useMemo(() => {
+  const currentMap = "icebox"; // ✅ aquí lo defines (ejemplo fijo)
     return {
       id: "demo-live",
       status: "LIVE",
@@ -46,8 +75,9 @@ export default function HomeMatches({ today, next, completed }) {
         { name: "G2 Esports", score: 2 },
         { name: "SENTINELS", score: 10 },
       ],
-      in: null, // no necesario en LIVE
-    };
+      currentMap,
+      mapImage: resolveMapImage(currentMap),
+      in: null,    };
   }, []);
 
   const upcomingCombined = useMemo(() => {
