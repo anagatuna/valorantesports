@@ -1,104 +1,205 @@
-//src/components/ScheduleCard.jsx
+// src/components/ScheduleCard.jsx
 "use client";
 
 import Link from "next/link";
 import Image from "next/image";
+import { useEffect, useMemo, useState } from "react";
 import { classifyTier } from "@/lib/tier";
 
-/*  helpers */
-const norm = s => s?.toLowerCase().replace(/[\s\-_\.]+/g,"").trim();
-function findLogo(name, map={}, list=[]){
-  const k = norm(name); if(!k) return null;
+/* ===== Helpers deterministas ===== */
+const TIMEZONE = "America/Mexico_City"; // fija para evitar diferencias SSR/cliente
+
+const norm = (s) => s?.toLowerCase().replace(/[\s\-_\.]+/g, "").trim();
+
+function findLogo(name, map = {}, list = []) {
+  const k = norm(name);
+  if (!k) return null;
   if (map[k]) return map[k];
-  for (const t of list){
+  for (const t of list) {
     const r = norm(t?.name);
     if (r && (r.includes(k) || k.includes(r))) return t?.img;
   }
   return null;
 }
-function pickScore(match, i){
+
+function pickScore(match, i) {
   const t = match?.teams?.[i];
   const direct = t?.score;
-  const flat = i===0
-    ? (match?.score1 ?? match?.team1?.score ?? match?.t1?.score)
-    : (match?.score2 ?? match?.team2?.score ?? match?.t2?.score);
-  const v = (direct ?? flat);
+  const flat =
+    i === 0
+      ? match?.score1 ?? match?.team1?.score ?? match?.t1?.score
+      : match?.score2 ?? match?.team2?.score ?? match?.t2?.score;
+  const v = direct ?? flat;
   if (v === undefined || v === null) return null;
-  if (typeof v === "string"){
-    const s = v.trim(); if (!s || ["-","–","—"].includes(s)) return null;
-    const n = Number(s); return Number.isFinite(n) ? n : s;
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!s || ["-", "–", "—"].includes(s)) return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : s;
   }
   return v;
 }
-function abbr(name=""){
-  const up=(name.normalize?.("NFD").replace(/[\u0300-\u036f]/g,"")||name).toUpperCase().trim();
+
+function abbr(name = "") {
+  const up =
+    (name.normalize?.("NFD").replace(/[\u0300-\u036f]/g, "") || name)
+      .toUpperCase()
+      .trim();
   if (/^[A-Z0-9]{2,4}$/.test(up)) return up;
-  const f=up.split(/\s+/)[0]; return f.length<=4?f:f.slice(0,3);
+  const f = up.split(/\s+/)[0];
+  return f.length <= 4 ? f : f.slice(0, 3);
 }
-function tzAbbr(d){ try{ return new Intl.DateTimeFormat([], { timeZoneName:"short" })
-  .formatToParts(d).find(p=>p.type==="timeZoneName")?.value || ""; }catch{return "";} }
-function tHM(d){ try{ return d.toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" }); }catch{return "";} }
-function ddMMM(d){ try{ return `${String(d.getDate()).padStart(2,"0")} ${d.toLocaleString([], { month:"short" }).toUpperCase()}`; }catch{return "";} }
-function diffHM(ms){ const m=Math.max(0,Math.floor(ms/60000)); const h=Math.floor(m/60); const mm=m%60; return h?`${h}h ${mm}m`:`${mm}m`; }
-function statusText(match){
-  const now=Date.now(), ts=typeof match.startTs==="number"?match.startTs:null;
-  if (match.status==="LIVE")     return ts?`LIVE • ${diffHM(now-ts)}`:"LIVE";
-  if (match.status==="UPCOMING") return ts && ts>now ? `${tHM(new Date(ts))} • en ${diffHM(ts-now)}` : (match.in || "UPCOMING");
-  return "FINAL";
+
+function tHM(d) {
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: TIMEZONE,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    }).format(d);
+  } catch {
+    return "";
+  }
 }
-function vctRegionLabel(name=""){
-  const s=name.toLowerCase();
+
+function ddMMM(d) {
+  try {
+    const s = new Intl.DateTimeFormat("en-US", {
+      timeZone: TIMEZONE,
+      day: "2-digit",
+      month: "short",
+    }).format(d);
+    return s.toUpperCase(); // ej. "01 SEP"
+  } catch {
+    return "";
+  }
+}
+
+function tzAbbr(d) {
+  // Solo para cliente; abreviaturas pueden variar por ICU.
+  try {
+    return (
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: TIMEZONE,
+        timeZoneName: "short",
+      })
+        .formatToParts(d)
+        .find((p) => p.type === "timeZoneName")?.value || ""
+    );
+  } catch {
+    return "";
+  }
+}
+
+function diffHM(ms) {
+  const m = Math.max(0, Math.floor(ms / 60000));
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return h ? `${h}h ${mm}m` : `${mm}m`;
+}
+
+function vctRegionLabel(name = "") {
+  const s = name.toLowerCase();
   if (s.includes("americas")) return "VCT AMERICAS";
   if (s.includes("emea")) return "VCT EMEA";
   if (s.includes("pacific")) return "VCT PACIFIC";
-  if (s.includes("china")||s.includes("cn")) return "VCT CN";
+  if (s.includes("china") || s.includes("cn")) return "VCT CN";
   return "VCT";
 }
-function tierLabel(eventName=""){
-  const t=classifyTier(eventName);
-  if (t==="T1") return vctRegionLabel(eventName);
-  if (t==="T2") return "CHALLENGERS";
-  if (t==="GC") return "GAME CHANGERS";
+
+function tierLabel(eventName = "") {
+  const t = classifyTier(eventName);
+  if (t === "T1") return vctRegionLabel(eventName);
+  if (t === "T2") return "CHALLENGERS";
+  if (t === "GC") return "GAME CHANGERS";
   return "LIGA";
 }
-function phaseFromEvent(e=""){
-  const s=e.toLowerCase();
+
+function phaseFromEvent(e = "") {
+  const s = e.toLowerCase();
   if (s.includes("regular")) return "REGULAR SEASON";
-  if (s.includes("group"))   return "GROUP STAGE";
-  if (s.includes("swiss"))   return "SWISS STAGE";
+  if (s.includes("group")) return "GROUP STAGE";
+  if (s.includes("swiss")) return "SWISS STAGE";
   if (s.includes("playoff")) return "PLAYOFFS";
   if (s.includes("semifinal")) return "SEMIFINALS";
-  if (s.includes("final"))   return "FINALS";
+  if (s.includes("final")) return "FINALS";
   return "MATCH";
 }
 
-/*  COMPONENT  */
-export default function ScheduleCard({ match, logos={}, teamList=[] }){
-  const [t1,t2] = match.teams ?? [{},{}];
+/* ===== Componente ===== */
+export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
+  // Evitar hydration: calcular hora/fecha/estado solo en cliente
+  const [mounted, setMounted] = useState(false);
+  const [now, setNow] = useState(null);
+
+  useEffect(() => {
+    setMounted(true);
+    setNow(Date.now());
+    // refrescar cada minuto para LIVE o countdown
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const [t1, t2] = match.teams ?? [{}, {}];
   const wm1 = t1?.name ? findLogo(t1.name, logos, teamList) : null;
   const wm2 = t2?.name ? findLogo(t2.name, logos, teamList) : null;
 
-  const s1 = pickScore(match,0);
-  const s2 = pickScore(match,1);
+  const s1 = pickScore(match, 0);
+  const s2 = pickScore(match, 1);
 
-  const ts = typeof match.startTs==="number" ? new Date(match.startTs) : null;
-  const isLive = match.status==="LIVE";
+  const ts = useMemo(
+    () => (typeof match.startTs === "number" ? new Date(match.startTs) : null),
+    [match.startTs]
+  );
+  const isLive = match.status === "LIVE";
+
+  // Strings de tiempo SOLO cuando mounted === true
+  const dateStr = mounted && ts ? ddMMM(ts) : "";
+  const timeStr = mounted && ts ? tHM(ts) : "";
+  const tzStr = mounted && ts ? tzAbbr(ts) : "";
+  const statusStr = useMemo(() => {
+    if (!mounted) return "";
+    const nowMs = now ?? Date.now();
+    const tsNum = typeof match.startTs === "number" ? match.startTs : null;
+    if (match.status === "LIVE")
+      return tsNum ? `LIVE • ${diffHM(nowMs - tsNum)}` : "LIVE";
+    if (match.status === "UPCOMING")
+      return tsNum && tsNum > nowMs
+        ? `${tHM(new Date(tsNum))} • en ${diffHM(tsNum - nowMs)}`
+        : match.in || "UPCOMING";
+    return "FINAL";
+  }, [mounted, now, match.status, match.startTs, match.in]);
 
   return (
     <div className={`sched ${isLive ? "is-live" : ""}`}>
-      {/* overlay suave */}
+      {/* overlay */}
       <div className="sched__overlay" />
 
       {/* watermarks (si hay logos) */}
       {wm1 && (
         <div className="sched__wm sched__wm--left">
-          <Image src={wm1} alt="" width={160} height={160} unoptimized className="sched__wm-img" />
+          <Image
+            src={wm1}
+            alt=""
+            width={160}
+            height={160}
+            unoptimized
+            className="sched__wm-img"
+          />
           <div className="sched__wm-fade sched__wm-fade--left" />
         </div>
       )}
       {wm2 && (
         <div className="sched__wm sched__wm--right">
-          <Image src={wm2} alt="" width={160} height={160} unoptimized className="sched__wm-img" />
+          <Image
+            src={wm2}
+            alt=""
+            width={160}
+            height={160}
+            unoptimized
+            className="sched__wm-img"
+          />
           <div className="sched__wm-fade sched__wm-fade--right" />
         </div>
       )}
@@ -107,9 +208,15 @@ export default function ScheduleCard({ match, logos={}, teamList=[] }){
       <div className="sched__grid">
         {/* fecha / hora */}
         <div className="time">
-          <div className="time__date">{ts ? ddMMM(ts) : "—"}</div>
-          <div className="time__clock">{ts ? tHM(ts) : (match.in ?? "—")}</div>
-          <div className="time__tz">{ts ? tzAbbr(ts) : ""}</div>
+          <div className="time__date" suppressHydrationWarning>
+            {dateStr || "—"}
+          </div>
+          <div className="time__clock" suppressHydrationWarning>
+            {timeStr || match.in || "—"}
+          </div>
+          <div className="time__tz" suppressHydrationWarning>
+            {tzStr}
+          </div>
         </div>
 
         {/* team 1 */}
@@ -138,9 +245,11 @@ export default function ScheduleCard({ match, logos={}, teamList=[] }){
 
         {/* estado + CTA */}
         <div className="cta">
-          <span className="cta__status">{statusText(match)}</span>
+          <span className="cta__status" suppressHydrationWarning>
+            {statusStr}
+          </span>
           {match.id && (
-            <Link href= '#' className="cta__btn"> {/* Esto va en el href {`/matches/${match.id}}` */}
+            <Link href="#" className="cta__btn">
               More info
             </Link>
           )}
