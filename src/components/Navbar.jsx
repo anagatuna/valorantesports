@@ -64,16 +64,18 @@ export default function Navbar() {
       </nav>
 
       {/* BURGER (solo móvil) */}
-      <button
-        className="valo-burger-fixed"
-        aria-label={open ? "Cerrar menú" : "Abrir menú"}
-        aria-expanded={open}
-        aria-controls="valoDrawer"
-        onClick={() => setOpen((v) => !v)}
-        type="button"
-      >
-        <span />
-      </button>
+      <header className="page-hero">
+        <button
+          className="valo-burger-fixed as-inline"
+          aria-label={open ? "Cerrar menú" : "Abrir menú"}
+          aria-expanded={open}
+          aria-controls="valoDrawer"
+          onClick={() => setOpen(v => !v)}
+          type="button"
+        >
+          <span />
+        </button>
+      </header>
 
       {/* DRAWER */}
       <aside
@@ -84,10 +86,12 @@ export default function Navbar() {
       >
         <div className="drawer-panel" role="dialog" aria-label="Navigation" onClick={(e) => e.stopPropagation()}>
           <nav className="drawer-list">
+            <Link href="/" className="home-link">Home</Link>
+            <br />
             <Link href="/matches" className={isActive("/matches") ? "is-active" : undefined}>Matches</Link>
             <Link href="/events" className={isActive("/events") ? "is-active" : undefined}>Events</Link>
             <Link href="/results" className={isActive("/results") ? "is-active" : undefined}>Results</Link>
-            <hr />
+            <br />
             <Link href="/teams" className={isActive("/teams") ? "is-active" : undefined}>Teams</Link>
             <Link href="/stats" className={isActive("/stats") ? "is-active" : undefined}>Stats</Link>
             <Link href="/pickems" className={isActive("/pickems") ? "is-active" : undefined}>Pick&apos;ems</Link>
