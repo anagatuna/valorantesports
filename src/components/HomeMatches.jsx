@@ -22,7 +22,6 @@ const MAP_IMAGES = {
   unknown:  "/maps/unknown.webp",
 };
 
-// normaliza nombres de mapa para mapear a imagen local
 const normMap = (s = "") =>
   s.toLowerCase().normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -33,7 +32,7 @@ const resolveMapImage = (mapName) => {
   return MAP_IMAGES[key] || MAP_IMAGES.unknown || null;
 };
 
-/* ================== Logos de equipos (igual que tenías) ================== */
+/* ================== Logos (igual que tenías) ================== */
 async function ensureLogosFor(matches) {
   const needed = new Set();
   for (const m of matches) (m.teams || []).forEach(t => t?.name && needed.add(t.name.toLowerCase().trim()));
@@ -76,17 +75,33 @@ function teamsRoughEqual(a = "", b = "") {
   return A === B || A.includes(B) || B.includes(A);
 }
 
-/* ================== Live segments desde tu proxy ================== */
+/* ================== Fetch helpers (proxies) ================== */
 async function fetchLiveSegmentsFromProxy() {
   try {
-    const r = await fetch("/api/vlrgg/live", { cache: "no-store" });
+    const r = await fetch("/api/vlrgg/list?q=live_score", { cache: "no-store" });
     if (!r.ok) return [];
     const j = await r.json();
-    // tu payload: { data: { status: 200, segments: [ ... ] } }
-    const segments = Array.isArray(j?.data?.segments) ? j.data.segments : [];
-    return segments;
+    // payload: { data: { status: 200, segments: [...] } }
+    return Array.isArray(j?.data?.segments) ? j.data.segments : [];
   } catch {
     return [];
+  }
+}
+
+/* ✅ NUEVA función de fallback “precisa” (sin 422)
+   Re-usa q=live_score y filtra por match_page */
+async function fetchCurrentMapByUrlFromSegments(vlrUrl) {
+  if (!vlrUrl) return null;
+  try {
+    const r = await fetch(`/api/vlrgg/list?q=live_score`, { cache: "no-store" });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const segs = Array.isArray(j?.data?.segments) ? j.data.segments : [];
+    const hit = segs.find(s => (s?.match_page || "").trim() === vlrUrl.trim());
+    const name = hit?.current_map;
+    return (typeof name === "string" && name.trim()) ? name : null;
+  } catch {
+    return null;
   }
 }
 
@@ -109,29 +124,23 @@ function decorateWithLocalMap(m) {
   return name ? { ...m, currentMap: name, mapImage: resolveMapImage(name) } : m;
 }
 
-/** Hidrata SOLO LIVE sin currentMap, usando /api/vlrgg/live (segments) */
-async function hydrateLiveMapsWithSegments(matches) {
-  const segments = await fetchLiveSegmentsFromProxy();
-  if (!segments.length) return matches;
+/* ================== Hidrataciones ================== */
+// Usa live_score para actualizar mapas LIVE (rápido)
+function hydrateWithSegmentsOnce(matches, segments) {
+  if (!segments?.length) return matches;
 
-  // Para acelerar matching, preparamos pares normalizados
   const prepared = segments.map(seg => ({
     raw: seg,
     t1: clean(seg?.team1 || ""),
     t2: clean(seg?.team2 || ""),
   }));
 
-  const out = [];
-  for (const m of matches) {
+  return matches.map(m => {
     const isLive = String(m?.status || "").toUpperCase() === "LIVE";
-    const hasMap = !!m?.currentMap;
-    if (!isLive || hasMap) {
-      out.push(m);
-      continue;
-    }
+    if (!isLive || !m?.teams?.length) return m;
 
-    const tm1 = clean(m?.teams?.[0]?.name || "");
-    const tm2 = clean(m?.teams?.[1]?.name || "");
+    const tm1 = clean(m.teams[0]?.name || "");
+    const tm2 = clean(m.teams[1]?.name || "");
 
     const hit = prepared.find(seg =>
       (seg.t1 && seg.t2) &&
@@ -143,21 +152,36 @@ async function hydrateLiveMapsWithSegments(matches) {
       )
     );
 
-    if (hit?.raw?.current_map) {
-      const name = hit.raw.current_map;
-      out.push({
+    const segMap = hit?.raw?.current_map;
+    if (segMap && segMap !== m.currentMap) {
+      return {
         ...m,
-        currentMap: name,
-        mapImage: resolveMapImage(name),
-        // extra opcional útil si quieres guardarlo:
-        vlrUrl: hit.raw.match_page || m.vlrUrl,
-        start_time: hit.raw.unix_timestamp || m.start_time,
-      });
-    } else {
-      out.push(m);
+        currentMap: segMap,
+        mapImage: resolveMapImage(segMap),
+        vlrUrl: hit?.raw?.match_page || m.vlrUrl, // guardamos url para fallback
+      };
     }
-  }
-  return out;
+    if (hit?.raw?.match_page && !m.vlrUrl) {
+      return { ...m, vlrUrl: hit.raw.match_page };
+    }
+    return m;
+  });
+}
+
+// ✅ Fallback preciso: re-usa live_score pero por match_page (sin tocar startTs)
+async function hydratePreciselyOnce(matches) {
+  const updated = await Promise.all(
+    matches.map(async (m) => {
+      const isLive = String(m?.status || "").toUpperCase() === "LIVE";
+      if (!isLive || !m?.vlrUrl) return m;
+      const precise = await fetchCurrentMapByUrlFromSegments(m.vlrUrl); // 👈 cambio aquí
+      if (precise && precise !== m.currentMap) {
+        return { ...m, currentMap: precise, mapImage: resolveMapImage(precise) };
+      }
+      return m;
+    })
+  );
+  return updated;
 }
 
 /* ================== Componente ================== */
@@ -183,36 +207,46 @@ export default function HomeMatches({ today, next, completed }) {
     };
   }, []);
 
-  // 1) Base lists
+  // Listas base (de tu feed ya mapeado a matches)
   const baseUpcoming = useMemo(() => {
     const a = today?.items || [];
     const b = next?.items || [];
-    return [demoLiveMatch, ...a, ...b].slice(0, 8);
-  }, [today, next, demoLiveMatch]);
+    return [demoLiveMatch,...a, ...b].slice(0, 8).map(decorateWithLocalMap);
+  }, [today, next]);
 
   const baseCompleted = useMemo(
-    () => (completed?.items || []).slice(0, 8),
+    () => (completed?.items || []).slice(0, 8).map(decorateWithLocalMap),
     [completed]
   );
 
-  // 2) Estado con listas (primero decoramos con lo que ya venga)
-  const [upcoming, setUpcoming] = useState(baseUpcoming.map(decorateWithLocalMap));
-  const [completedList, setCompletedList] = useState(baseCompleted.map(decorateWithLocalMap));
+  // Estado
+  const [upcoming, setUpcoming] = useState(baseUpcoming);
+  const [completedList, setCompletedList] = useState(baseCompleted);
 
-  // 3) Hidratar currentMap (LIVE) + Logos
+  // Primera hidratación + logos
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // Hidrata currentMap SOLO para LIVE que aún no lo traen, usando /api/vlrgg/live
-      const hydUpcoming = await hydrateLiveMapsWithSegments(baseUpcoming.map(decorateWithLocalMap));
-      const hydCompleted = await hydrateLiveMapsWithSegments(baseCompleted.map(decorateWithLocalMap));
+      // 1) hidrata rápidamente con live_score
+      const segs = await fetchLiveSegmentsFromProxy();
+      if (cancelled) return;
+      const hyd1U = hydrateWithSegmentsOnce(baseUpcoming, segs);
+      const hyd1C = hydrateWithSegmentsOnce(baseCompleted, segs);
       if (!cancelled) {
-        setUpcoming(hydUpcoming);
-        setCompletedList(hydCompleted);
+        setUpcoming(hyd1U);
+        setCompletedList(hyd1C);
       }
 
-      // Logos de equipos
-      const visible = [...hydUpcoming, ...hydCompleted];
+      // 2) fallback “preciso” por match_page (sin endpoint de detalle)
+      const hyd2U = await hydratePreciselyOnce(hyd1U);
+      const hyd2C = await hydratePreciselyOnce(hyd1C);
+      if (!cancelled) {
+        setUpcoming(hyd2U);
+        setCompletedList(hyd2C);
+      }
+
+      // 3) logos
+      const visible = [...hyd2U, ...hyd2C];
       const cache = await ensureLogosFor(visible);
       if (!cancelled) {
         setLogoMap(cache?.logoMap || {});
@@ -221,6 +255,37 @@ export default function HomeMatches({ today, next, completed }) {
     })();
     return () => { cancelled = true; };
   }, [baseUpcoming, baseCompleted]);
+
+  // Polling cada 45s solo para LIVE
+  useEffect(() => {
+    let cancelled = false;
+
+    async function tick() {
+      const segs = await fetchLiveSegmentsFromProxy();
+      if (cancelled) return;
+
+      // 1) hidrata por segmentos (rápido)
+      setUpcoming(prev => hydrateWithSegmentsOnce(prev, segs));
+      setCompletedList(prev => hydrateWithSegmentsOnce(prev, segs));
+
+      // 2) fallback por match_page
+      const nextU = await hydratePreciselyOnce(
+        hydrateWithSegmentsOnce(upcoming, segs)
+      );
+      const nextC = await hydratePreciselyOnce(
+        hydrateWithSegmentsOnce(completedList, segs)
+      );
+      if (!cancelled) {
+        setUpcoming(nextU);
+        setCompletedList(nextC);
+      }
+    }
+
+    tick();
+    const id = setInterval(tick, 45_000);
+    return () => { cancelled = true; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // polling independiente del re-render
 
   return (
     <div className="home-matches">
