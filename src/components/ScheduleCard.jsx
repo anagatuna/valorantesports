@@ -1,3 +1,4 @@
+// src/components/ScheduleCard.jsx
 "use client";
 
 import Link from "next/link";
@@ -6,7 +7,8 @@ import { useEffect, useMemo, useState } from "react";
 import { classifyTier } from "@/lib/tier";
 
 /* ===== Helpers deterministas ===== */
-const TIMEZONE = "America/Mexico_City";
+// Usa la zona del usuario (fallback UTC)
+const TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
 const norm = (s) => s?.toLowerCase().replace(/[\s\-_\.]+/g, "").trim();
 
@@ -125,6 +127,35 @@ function phaseFromEvent(e = "") {
   return "MATCH";
 }
 
+/* ===== Normalización segura del startTs ===== */
+// lee varias llaves posibles del feed
+function getRawStartTs(m) {
+  return (
+    m?.startTs ??
+    m?.start_time ??
+    m?.start ??
+    m?.time ??
+    m?.ts ??
+    null
+  );
+}
+
+// convierte a milisegundos (acepta ms, segundos, string numérica, ISO)
+function toMs(ts) {
+  if (ts == null) return null;
+
+  if (typeof ts === "number") {
+    return ts < 1e12 ? ts * 1000 : ts; // segundos -> ms
+  }
+  if (typeof ts === "string") {
+    const num = Number(ts);
+    if (!Number.isNaN(num)) return num < 1e12 ? num * 1000 : num;
+    const parsed = Date.parse(ts); // ISO
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  return null;
+}
+
 /* ===== Componente ===== */
 export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
   const [mounted, setMounted] = useState(false);
@@ -144,35 +175,66 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
   const s1 = pickScore(match, 0);
   const s2 = pickScore(match, 1);
 
-  const ts = useMemo(
-    () => (typeof match.startTs === "number" ? new Date(match.startTs) : null),
-    [match.startTs]
-  );
-  const isLive = match.status === "LIVE";
+  // Fecha/hora normalizada (NO se sobreescribe con nada de la hidratación del mapa)
+  const ts = useMemo(() => {
+    const ms = toMs(getRawStartTs(match));
+    return Number.isFinite(ms) ? new Date(ms) : null;
+  }, [
+    match.startTs,
+    match.start_time,
+    match.start,
+    match.time,
+    match.ts,
+  ]);
+
+  const isLiveFeed = String(match.status || "").toUpperCase() === "LIVE";
 
   const dateStr = mounted && ts ? ddMMM(ts) : "";
   const timeStr = mounted && ts ? tHM(ts) : "";
   const tzStr = mounted && ts ? tzAbbr(ts) : "";
 
+  // Estado con tolerancia: si ya pasó la hora, trátalo como LIVE (hasta 4h)
+  const MAX_MATCH_MS = 4 * 60 * 60 * 1000;
+  const LIVE_TOLERANCE_MS = 5 * 60 * 1000;
+
   const statusStr = useMemo(() => {
     if (!mounted) return "";
-    const nowMs = now ?? Date.now();
-    const tsNum = typeof match.startTs === "number" ? match.startTs : null;
-    if (match.status === "LIVE")
-      return tsNum ? `LIVE • ${diffHM(nowMs - tsNum)}` : "LIVE";
-    if (match.status === "UPCOMING")
-      return tsNum && tsNum > nowMs
-        ? `${tHM(new Date(tsNum))} • en ${diffHM(tsNum - nowMs)}`
-        : match.in || "UPCOMING";
-    return "FINAL";
-  }, [mounted, now, match.status, match.startTs, match.in]);
 
- return (
-    <div className={`sched ${isLive ? "is-live" : ""}`}>
-      {/* overlay opcional para oscurecer todo ligeramente */}
+    const nowMs = now ?? Date.now();
+    const ms =
+      ts instanceof Date && !Number.isNaN(ts.getTime()) ? ts.getTime() : null;
+
+    // FINAL solo si el feed lo dice explícito
+    const finalFromFeed = ["FINAL", "COMPLETED", "FINISHED", "DONE"].includes(
+      String(match.status || "").toUpperCase()
+    );
+    if (finalFromFeed) return "FINAL";
+
+    if (ms != null) {
+      if (nowMs >= ms - LIVE_TOLERANCE_MS) {
+        const elapsed = nowMs - ms;
+        if (elapsed <= MAX_MATCH_MS || isLiveFeed) {
+          return `LIVE • ${diffHM(Math.max(0, elapsed))}`;
+        }
+        return "FINAL";
+      }
+      // futuro
+      return `${tHM(new Date(ms))} • en ${diffHM(ms - nowMs)}`;
+    }
+
+    // sin timestamp: respeta in o muestra LIVE/UPCOMING por feed
+    if (isLiveFeed) return "LIVE";
+    if (match.in && String(match.in).trim()) return match.in;
+
+    return "UPCOMING";
+  }, [mounted, now, ts, match.status, match.in, isLiveFeed]);
+
+  return (
+    <div className={`sched ${isLiveFeed ? "is-live" : ""}`}>
+      {/* overlay global leve */}
       <div className="sched__overlay" />
 
-      {/* === FONDO GLOBAL: MAPA DE LA CARD === */}
+      {/* === FONDO: MAPA (inyectado por HomeMatches) === */}
       {match.mapImage && (
         <div className="sched__bg">
           <Image
@@ -182,12 +244,11 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
             priority={false}
             className="sched__bg-img"
           />
-          {/* fade / viñeta para lados y bordes */}
           <div className="sched__bg-fade" />
         </div>
       )}
 
-      {/* watermarks (logos equipos) */}
+      {/* Watermarks de equipos */}
       {wm1 && (
         <div className="sched__wm sched__wm--left">
           <Image src={wm1} alt="" width={160} height={160} unoptimized className="sched__wm-img" />
@@ -201,7 +262,7 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
         </div>
       )}
 
-      {/* contenido */}
+      {/* Contenido */}
       <div className="sched__grid">
         {/* fecha / hora */}
         <div className="time">
@@ -216,7 +277,7 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
           <div className="team__name">{t1?.name ?? "—"}</div>
         </div>
 
-        {/* marcador SIN fondo de mapa */}
+        {/* marcador */}
         <div className="scorebox">
           <div className="scorebox__content">
             <div className="scorebox__row">
@@ -226,6 +287,7 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
             </div>
             <div className="meta-line">
               {phaseFromEvent(match.event)} · {tierLabel(match.event)}
+              {match.currentMap ? ` · ${match.currentMap.toUpperCase()}` : ""}
             </div>
           </div>
         </div>
