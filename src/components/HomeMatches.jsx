@@ -34,11 +34,28 @@ export default function HomeMatches({ today, next, completed }) {
   const [logoMap, setLogoMap] = useState({});
   const [teamList, setTeamList] = useState([]);
 
+  // 🔹 Match DEMO: se fija una vez al montar (para que el contador LIVE avance bien)
+  const demoLiveMatch = useMemo(() => {
+    return {
+      id: "demo-live",
+      status: "LIVE",
+      // empezó hace ~25 min
+      startTs: Date.now() - 25 * 60 * 1000,
+      event: "PLAYOFFS • VCT",
+      teams: [
+        { name: "LOUD", score: 2 },
+        { name: "SENTINELS", score: 10 },
+      ],
+      in: null, // no necesario en LIVE
+    };
+  }, []);
+
   const upcomingCombined = useMemo(() => {
     const a = today?.items || [];
     const b = next?.items || [];
-    return [...a, ...b].slice(0, 8);
-  }, [today, next]);
+    // SIEMPRE anteponer el DEMO LIVE
+    return [demoLiveMatch, ...a, ...b].slice(0, 8);
+  }, [today, next, demoLiveMatch]);
 
   const completedLimited = useMemo(
     () => (completed?.items || []).slice(0, 8),
