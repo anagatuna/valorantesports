@@ -7,8 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { classifyTier } from "@/lib/tier";
 
 /* ===== Helpers deterministas ===== */
-// Usa la zona del usuario (fallback UTC)
-const TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+const TIMEZONE = "America/Mexico_City";
 
 const norm = (s) => s?.toLowerCase().replace(/[\s\-_\.]+/g, "").trim();
 
@@ -127,33 +126,37 @@ function phaseFromEvent(e = "") {
   return "MATCH";
 }
 
-/* ===== Normalización segura del startTs ===== */
-// lee varias llaves posibles del feed
-function getRawStartTs(m) {
-  return (
-    m?.startTs ??
-    m?.start_time ??
-    m?.start ??
-    m?.time ??
-    m?.ts ??
-    null
-  );
+/* ===== Rounds helpers (compactos) ===== */
+const toNum = (x) => {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+};
+
+function getRounds(match) {
+  if (match?.rounds) {
+    const r = match.rounds;
+    return {
+      t1ct: toNum(r.t1ct),
+      t1t:  toNum(r.t1t),
+      t2ct: toNum(r.t2ct),
+      t2t:  toNum(r.t2t),
+    };
+  }
+  return {
+    t1ct: toNum(match?.team1_round_ct),
+    t1t:  toNum(match?.team1_round_t),
+    t2ct: toNum(match?.team2_round_ct),
+    t2t:  toNum(match?.team2_round_t),
+  };
 }
 
-// convierte a milisegundos (acepta ms, segundos, string numérica, ISO)
-function toMs(ts) {
-  if (ts == null) return null;
-
-  if (typeof ts === "number") {
-    return ts < 1e12 ? ts * 1000 : ts; // segundos -> ms
-  }
-  if (typeof ts === "string") {
-    const num = Number(ts);
-    if (!Number.isNaN(num)) return num < 1e12 ? num * 1000 : num;
-    const parsed = Date.parse(ts); // ISO
-    return Number.isNaN(parsed) ? null : parsed;
-  }
-  return null;
+function fmtRoundsCompact(ct, t) {
+  const hasCT = ct !== null && ct !== undefined;
+  const hasT  = t  !== null && t  !== undefined;
+  if (!hasCT && !hasT) return "";
+  if (hasCT && hasT) return `(${ct}/${t})`;
+  if (hasCT)          return `(${ct} CT)`;
+  return `(${t} T)`;
 }
 
 /* ===== Componente ===== */
@@ -175,68 +178,42 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
   const s1 = pickScore(match, 0);
   const s2 = pickScore(match, 1);
 
-  // Fecha/hora normalizada (NO se sobreescribe con nada de la hidratación del mapa)
-  const ts = useMemo(() => {
-    const ms = toMs(getRawStartTs(match));
-    return Number.isFinite(ms) ? new Date(ms) : null;
-  }, [
-    match.startTs,
-    match.start_time,
-    match.start,
-    match.time,
-    match.ts,
-  ]);
-
-  const isLiveFeed = String(match.status || "").toUpperCase() === "LIVE";
+  const ts = useMemo(
+    () => (typeof match.startTs === "number" ? new Date(match.startTs) : null),
+    [match.startTs]
+  );
+  const isLive = match.status === "LIVE";
 
   const dateStr = mounted && ts ? ddMMM(ts) : "";
   const timeStr = mounted && ts ? tHM(ts) : "";
   const tzStr = mounted && ts ? tzAbbr(ts) : "";
 
-  // Estado con tolerancia: si ya pasó la hora, trátalo como LIVE (hasta 4h)
-  const MAX_MATCH_MS = 4 * 60 * 60 * 1000;
-  const LIVE_TOLERANCE_MS = 5 * 60 * 1000;
-
   const statusStr = useMemo(() => {
     if (!mounted) return "";
-
     const nowMs = now ?? Date.now();
-    const ms =
-      ts instanceof Date && !Number.isNaN(ts.getTime()) ? ts.getTime() : null;
+    const tsNum = typeof match.startTs === "number" ? match.startTs : null;
+    if (match.status === "LIVE")
+      return tsNum ? `LIVE • ${diffHM(nowMs - tsNum)}` : "LIVE";
+    if (match.status === "UPCOMING")
+      return tsNum && tsNum > nowMs
+        ? `${tHM(new Date(tsNum))} • en ${diffHM(tsNum - nowMs)}`
+        : match.in || "UPCOMING";
+    return "FINAL";
+  }, [mounted, now, match.status, match.startTs, match.in]);
 
-    // FINAL solo si el feed lo dice explícito
-    const finalFromFeed = ["FINAL", "COMPLETED", "FINISHED", "DONE"].includes(
-      String(match.status || "").toUpperCase()
-    );
-    if (finalFromFeed) return "FINAL";
-
-    if (ms != null) {
-      if (nowMs >= ms - LIVE_TOLERANCE_MS) {
-        const elapsed = nowMs - ms;
-        if (elapsed <= MAX_MATCH_MS || isLiveFeed) {
-          return `LIVE • ${diffHM(Math.max(0, elapsed))}`;
-        }
-        return "FINAL";
-      }
-      // futuro
-      return `${tHM(new Date(ms))} • en ${diffHM(ms - nowMs)}`;
-    }
-
-    // sin timestamp: respeta in o muestra LIVE/UPCOMING por feed
-    if (isLiveFeed) return "LIVE";
-    if (match.in && String(match.in).trim()) return match.in;
-
-    return "UPCOMING";
-  }, [mounted, now, ts, match.status, match.in, isLiveFeed]);
+  /* === Rondas compactas (al lado del score) === */
+  const { t1ct, t1t, t2ct, t2t } = getRounds(match);
+  const r1Text = fmtRoundsCompact(t1ct, t1t);
+  const r2Text = fmtRoundsCompact(t2ct, t2t);
 
   return (
-    <div className={`sched ${isLiveFeed ? "is-live" : ""}`}>
+    <div className={`sched ${isLive ? "is-live" : ""}`}>
       {/* overlay global leve */}
       <div className="sched__overlay" />
 
-      {/* === FONDO: MAPA (inyectado por HomeMatches) === */}
+      {/* === FONDO: MAPA (cinta centrada) === */}
       {match.mapImage && (
-        <div className="sched__bg">
+        <div className="sched__bg" aria-hidden="true">
           <div className="sched__center">
             <Image
               src={match.mapImage}
@@ -244,13 +221,13 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
               fill
               priority={false}
               className="sched__center-img"
+              sizes="(max-width: 640px) 48vw, (max-width: 820px) 42vw, 30vw"
             />
-            <span className="sched__center-vignette" />
           </div>
         </div>
       )}
 
-      {/* Watermarks de equipos */}
+      {/* watermarks (logos equipos) */}
       {wm1 && (
         <div className="sched__wm sched__wm--left">
           <Image src={wm1} alt="" width={160} height={160} unoptimized className="sched__wm-img" />
@@ -264,7 +241,7 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
         </div>
       )}
 
-      {/* Contenido */}
+      {/* contenido */}
       <div className="sched__grid">
         {/* fecha / hora */}
         <div className="time">
@@ -279,13 +256,17 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
           <div className="team__name">{t1?.name ?? "—"}</div>
         </div>
 
-        {/* marcador */}
+        {/* marcador (solo agregamos rondas compactas al lado del score) */}
         <div className="scorebox">
           <div className="scorebox__content">
             <div className="scorebox__row">
-              <span className="score">{s1 ?? "–"}</span>
+              <span className="score">
+                {s1 ?? "–"}{r1Text && <span className="score__rnd"> {r1Text}</span>}
+              </span>
               <span className="vs">VS</span>
-              <span className="score">{s2 ?? "–"}</span>
+              <span className="score">
+                {s2 ?? "–"}{r2Text && <span className="score__rnd"> {r2Text}</span>}
+              </span>
             </div>
             <div className="meta-line">
               {phaseFromEvent(match.event)} · {tierLabel(match.event)}
