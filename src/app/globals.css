@@ -1082,6 +1082,16 @@ main {
   mask-size: cover;
 }
 
+/* mini badge al lado del score, sin romper layout */
+.score__rnd{
+  display:inline;
+  white-space:nowrap;
+  margin-left:.35rem;
+  font-size:.8em;
+  opacity:.9;
+}
+
+
 /* responsive: reduce ancho del ribbon en móviles */
 @media (max-width: 820px) {
   .sched {
