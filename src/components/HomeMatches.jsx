@@ -1,4 +1,3 @@
-// src/components/HomeMatches.jsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -75,7 +74,6 @@ function teamsRoughEqual(a = "", b = "") {
 /* ================== Feed helpers ================== */
 async function fetchLiveSegmentsFromProxy() {
   try {
-    // cache-buster para evitar respuestas viejas del proxy/CDN
     const r = await fetch(`/api/vlrgg/list?q=live_score&_=${Date.now()}`, { cache: "no-store" });
     if (!r.ok) return [];
     const j = await r.json();
@@ -90,7 +88,6 @@ function getSegMapName(seg = {}) {
 }
 
 function getSegRounds(seg = {}) {
-  // convierte a número o null
   const n = (x) => {
     const v = Number(x);
     return Number.isFinite(v) ? v : null;
@@ -125,7 +122,6 @@ function decorateWithLocalMap(m) {
 }
 
 /* ================== Hidrataciones ================== */
-/** Promueve a LIVE si el segmento lo marca + actualiza currentMap/scores/rounds */
 function hydrateWithSegmentsOnce(matches, segments) {
   if (!segments?.length) return matches;
 
@@ -158,7 +154,7 @@ function hydrateWithSegmentsOnce(matches, segments) {
     const segMap = getSegMapName(hit.raw);
     const rounds = getSegRounds(hit.raw);
 
-    // series score (mapas ganados) si vienen
+    // series wins (mapas ganados)
     const s1 = Number(hit.raw?.score1);
     const s2 = Number(hit.raw?.score2);
     const score1 = Number.isFinite(s1) ? s1 : m?.teams?.[0]?.score ?? null;
@@ -171,7 +167,7 @@ function hydrateWithSegmentsOnce(matches, segments) {
       mapImage: segMap ? resolveMapImage(segMap) : m.mapImage || null,
       vlrUrl: hit.raw?.match_page || m.vlrUrl,
       mapNumber: hit.raw?.map_number ?? m.mapNumber,
-      rounds, // ← guardamos rondas del mapa actual (por si quieres mostrarlas)
+      rounds,
       teams: [
         { ...(m.teams?.[0] || {}), score: nextStatus === "UPCOMING" ? null : score1 },
         { ...(m.teams?.[1] || {}), score: nextStatus === "UPCOMING" ? null : score2 },
@@ -180,9 +176,8 @@ function hydrateWithSegmentsOnce(matches, segments) {
   });
 }
 
-/** Fallback: revalida currentMap por match_page (re-usa live_score) */
 async function hydratePreciselyOnce(matches) {
-  const segs = await fetchLiveSegmentsFromProxy(); // usa snapshot más nuevo
+  const segs = await fetchLiveSegmentsFromProxy();
   const prepared = segs.map((seg) => ({
     raw: seg,
     url: (seg?.match_page || "").trim(),
@@ -199,7 +194,6 @@ async function hydratePreciselyOnce(matches) {
     if (segMap && segMap !== m.currentMap) {
       return { ...m, currentMap: segMap, mapImage: resolveMapImage(segMap), rounds };
     }
-    // aunque no cambie el mapa, actualiza rondas por si avanzaron
     if (rounds && JSON.stringify(rounds) !== JSON.stringify(m.rounds)) {
       return { ...m, rounds };
     }
@@ -216,7 +210,7 @@ export default function HomeMatches({ today, next, completed }) {
   const [logoMap, setLogoMap] = useState({});
   const [teamList, setTeamList] = useState([]);
 
-  // Demo LIVE (puedes quitarlo si estorba)
+  // Demo LIVE
   const demoLiveMatch = useMemo(() => {
     const currentMap = "icebox";
     return {
@@ -224,23 +218,28 @@ export default function HomeMatches({ today, next, completed }) {
       status: "LIVE",
       startTs: Date.now() - 25 * 60 * 1000,
       event: "PLAYOFFS • VCT",
+
+      bestOf: 3, // Bo3
+
+      // 👇 ESTO es "mapas ganados" (para los diamantes)
       teams: [
-        { name: "G2 Esports", score: 2 },
-        { name: "SENTINELS", score: 10 },
+        { name: "G2 Esports", score: 0 },
+        { name: "SENTINELS",  score: 1 },
       ],
+
+      // 👇 Esto es el mapa actual (para el score grande)
       currentMap,
       mapImage: resolveMapImage(currentMap),
       in: null,
       rounds: {
-      t1ct: 3,
-      t1t:  6,
-      t2ct: 5,
-      t2t:  8,
-    },
-  };
-}, []);
+        t1ct: 4,
+        t1t:  6,
+        t2ct: 8,
+        t2t:  4,
+      },
+    };
+  }, []);
 
-  // Base lists (del feed server)
   const baseUpcoming = useMemo(() => {
     const a = today?.items || [];
     const b = next?.items || [];
@@ -252,19 +251,13 @@ export default function HomeMatches({ today, next, completed }) {
     [completed]
   );
 
-  // Estado + refs para evitar stale-closure en polling
   const [upcoming, setUpcoming] = useState(baseUpcoming);
   const [completedList, setCompletedList] = useState(baseCompleted);
   const upRef = useRef(upcoming);
   const compRef = useRef(completedList);
-  useEffect(() => {
-    upRef.current = upcoming;
-  }, [upcoming]);
-  useEffect(() => {
-    compRef.current = completedList;
-  }, [completedList]);
+  useEffect(() => { upRef.current = upcoming; }, [upcoming]);
+  useEffect(() => { compRef.current = completedList; }, [completedList]);
 
-  // Primera hidratación + logos
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -292,12 +285,9 @@ export default function HomeMatches({ today, next, completed }) {
         setTeamList(cache?.teamList || []);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [baseUpcoming, baseCompleted]);
 
-  // Polling (usa refs para leer el estado más reciente)
   useEffect(() => {
     let cancelled = false;
 
@@ -319,15 +309,11 @@ export default function HomeMatches({ today, next, completed }) {
 
     tick();
     const id = setInterval(tick, POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
+    return () => { cancelled = true; clearInterval(id); };
   }, []);
 
   return (
     <div className="home-matches">
-      {/* Upcoming */}
       <section className="block">
         <div className="block__head">
           <h2 className="block__title text-3xl font-bold mb-10">Upcoming matches</h2>
@@ -343,7 +329,6 @@ export default function HomeMatches({ today, next, completed }) {
         )}
       </section>
 
-      {/* Completed */}
       <section className="block">
         <div className="block__head">
           <h2 className="block__title text-3xl font-bold mb-10">Completed matches</h2>
