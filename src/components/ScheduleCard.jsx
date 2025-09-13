@@ -3,11 +3,13 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
+import { classifyTier } from "@/lib/tier";
 
-/* ===== Helpers ===== */
+/* ===== Helpers deterministas ===== */
 const TIMEZONE = "America/Mexico_City";
 
 const norm = (s) => s?.toLowerCase().replace(/[\s\-_\.]+/g, "").trim();
+
 function findLogo(name, map = {}, list = []) {
   const k = norm(name);
   if (!k) return null;
@@ -18,6 +20,25 @@ function findLogo(name, map = {}, list = []) {
   }
   return null;
 }
+
+function pickScore(match, i) {
+  const t = match?.teams?.[i];
+  const direct = t?.score;
+  const flat =
+    i === 0
+      ? match?.score1 ?? match?.team1?.score ?? match?.t1?.score
+      : match?.score2 ?? match?.team2?.score ?? match?.t2?.score;
+  const v = direct ?? flat;
+  if (v === undefined || v === null) return null;
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!s || ["-", "–", "—"].includes(s)) return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : s;
+  }
+  return v;
+}
+
 function abbr(name = "") {
   const up =
     (name.normalize?.("NFD").replace(/[\u0300-\u036f]/g, "") || name)
@@ -27,65 +48,111 @@ function abbr(name = "") {
   const f = up.split(/\s+/)[0];
   return f.length <= 4 ? f : f.slice(0, 3);
 }
-function tHM(d) { try { return new Intl.DateTimeFormat("en-US",{timeZone:TIMEZONE,hour:"2-digit",minute:"2-digit",hour12:true}).format(d);} catch {return "";} }
-function ddMMM(d){ try{ const s=new Intl.DateTimeFormat("en-US",{timeZone:TIMEZONE,day:"2-digit",month:"short"}).format(d); return s.toUpperCase();}catch{return "";} }
-function tzAbbr(d){ try{ return (new Intl.DateTimeFormat("en-US",{timeZone:TIMEZONE,timeZoneName:"short"}).formatToParts(d).find(p=>p.type==="timeZoneName")?.value)||"";}catch{return "";} }
-function diffHM(ms){ const m=Math.max(0,Math.floor(ms/60000)); const h=Math.floor(m/60); const mm=m%60; return h?`${h}h ${mm}m`:`${mm}m`; }
 
-/* ===== Rounds helpers (mapa actual) ===== */
-const toNum = (x) => { const n=Number(x); return Number.isFinite(n)?n:null; };
+function tHM(d) {
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: TIMEZONE,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    }).format(d);
+  } catch {
+    return "";
+  }
+}
+
+function ddMMM(d) {
+  try {
+    const s = new Intl.DateTimeFormat("en-US", {
+      timeZone: TIMEZONE,
+      day: "2-digit",
+      month: "short",
+    }).format(d);
+    return s.toUpperCase();
+  } catch {
+    return "";
+  }
+}
+
+function tzAbbr(d) {
+  try {
+    return (
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: TIMEZONE,
+        timeZoneName: "short",
+      })
+        .formatToParts(d)
+        .find((p) => p.type === "timeZoneName")?.value || ""
+    );
+  } catch {
+    return "";
+  }
+}
+
+function diffHM(ms) {
+  const m = Math.max(0, Math.floor(ms / 60000));
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return h ? `${h}h ${mm}m` : `${mm}m`;
+}
+
+function vctRegionLabel(name = "") {
+  const s = name.toLowerCase();
+  if (s.includes("americas")) return "VCT AMERICAS";
+  if (s.includes("emea")) return "VCT EMEA";
+  if (s.includes("pacific")) return "VCT PACIFIC";
+  if (s.includes("china") || s.includes("cn")) return "VCT CN";
+  return "VCT";
+}
+
+function tierLabel(eventName = "") {
+  const t = classifyTier(eventName);
+  if (t === "T1") return vctRegionLabel(eventName);
+  if (t === "T2") return "CHALLENGERS";
+  if (t === "GC") return "GAME CHANGERS";
+  return "LIGA";
+}
+
+function phaseFromEvent(e = "") {
+  const s = e.toLowerCase();
+  if (s.includes("regular")) return "REGULAR SEASON";
+  if (s.includes("group")) return "GROUP STAGE";
+  if (s.includes("swiss")) return "SWISS STAGE";
+  if (s.includes("playoff")) return "PLAYOFFS";
+  if (s.includes("semifinal")) return "SEMIFINALS";
+  if (s.includes("final")) return "FINALS";
+  return "MATCH";
+}
+
+/* ===== Rounds helpers (compactos) ===== */
+const toNum = (x) => {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+};
+
 function getRounds(match) {
   if (match?.rounds) {
     const r = match.rounds;
-    return { t1ct: toNum(r.t1ct), t1t: toNum(r.t1t), t2ct: toNum(r.t2ct), t2t: toNum(r.t2t) };
+    return {
+      t1ct: toNum(r.t1ct),
+      t1t: toNum(r.t1t),
+      t2ct: toNum(r.t2ct),
+      t2t: toNum(r.t2t),
+    };
   }
   return {
     t1ct: toNum(match?.team1_round_ct),
-    t1t:  toNum(match?.team1_round_t),
+    t1t: toNum(match?.team1_round_t),
     t2ct: toNum(match?.team2_round_ct),
-    t2t:  toNum(match?.team2_round_t),
+    t2t: toNum(match?.team2_round_t),
   };
 }
-const sumMaybe = (a,b) => {
-  const A=Number(a), B=Number(b);
-  const hasA=Number.isFinite(A), hasB=Number.isFinite(B);
-  if (!hasA && !hasB) return null;
-  return (hasA?A:0) + (hasB?B:0);
-};
 
-/** mapas ganados (para diamantes) */
-function pickSeriesWins(match, i) {
-  const t = match?.teams?.[i] || {};
-  const candidates = [
-    t.score, t.maps, t.series, t.wins,
-    i===0 ? match?.series1 : match?.series2,
-    i===0 ? match?.maps1   : match?.maps2,
-  ];
-  for (const c of candidates) {
-    const n = Number(c);
-    if (Number.isFinite(n)) return n;
-  }
-  return 0;
-}
-
-/** best-of */
-function getBestOf(match, w1, w2) {
-  const candidates = [
-    match?.bestOf, match?.bo, match?.maxMaps,
-    match?.series?.best_of, match?.series?.bo,
-    match?.format?.bestOf, match?.format?.bo,
-    Array.isArray(match?.maps) ? match.maps.length : null,
-  ].map(Number).filter(Number.isFinite);
-  const fromData = candidates.find((v) => v === 3 || v === 5);
-  if (fromData) return fromData;
-  const maxW = Math.max(Number(w1||0), Number(w2||0));
-  return maxW >= 3 ? 5 : 3;
-}
-
-/** (ct/t) con spans coloreables */
+/** Devuelve JSX coloreable para (CT/T) */
 function fmtRoundsCompact(ct, t) {
   const hasCT = ct !== null && ct !== undefined;
-  const hasT  = t  !== null && t  !== undefined;
+  const hasT = t !== null && t !== undefined;
   if (!hasCT && !hasT) return null;
 
   if (hasCT && hasT) {
@@ -117,13 +184,34 @@ function fmtRoundsCompact(ct, t) {
   );
 }
 
-/* ===== Diamantes ===== */
-function SeriesDiamonds({ wins = 0, total = 3, side = "left" }) {
-  const n = Number(total) || 3;
-  const w = Math.max(0, Number(wins) || 0);
+/* ===== Series (diamantes) ===== */
+function getBestOf(match, s1, s2) {
+  const candidates = [
+    match?.series?.bestOf,
+    match?.bestOf,
+    match?.bo,
+    match?.maxMaps,
+    match?.series?.bo,
+    match?.format?.bestOf,
+    match?.format?.bo,
+    Array.isArray(match?.maps) ? match.maps.length : null,
+  ]
+    .map(Number)
+    .filter(Number.isFinite);
+  const fromData = candidates.find((v) => v === 3 || v === 5);
+  if (fromData) return fromData;
+
+  const m1 = Number(match?.series?.wins1 ?? s1 ?? 0);
+  const m2 = Number(match?.series?.wins2 ?? s2 ?? 0);
+  return Math.max(m1, m2) >= 3 ? 5 : 3; // heurística
+}
+
+function SeriesDiamonds({ wins = 0, bestOf = 3, side = "left" }) {
+  const total = Math.max(1, Math.ceil((Number(bestOf) || 3) / 2)); // Bo3→2, Bo5→3
+  const w = Math.min(Math.max(0, Number(wins) || 0), total);
   return (
     <div className={`series series--${side}`}>
-      {Array.from({ length: n }).map((_, i) => (
+      {Array.from({ length: total }).map((_, i) => (
         <span key={i} className={`diamond ${i < w ? "diamond--win" : ""}`} />
       ))}
     </div>
@@ -145,6 +233,10 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
   const [t1, t2] = match.teams ?? [{}, {}];
   const wm1 = t1?.name ? findLogo(t1.name, logos, teamList) : null;
   const wm2 = t2?.name ? findLogo(t2.name, logos, teamList) : null;
+
+  // NO usar esto para rondas; es solo fallback de series cuando no está LIVE
+  const s1 = pickScore(match, 0);
+  const s2 = pickScore(match, 1);
 
   const ts = useMemo(
     () => (typeof match.startTs === "number" ? new Date(match.startTs) : null),
@@ -169,20 +261,22 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
     return "FINAL";
   }, [mounted, now, match.status, match.startTs, match.in]);
 
-  // ===== Scores =====
+  /* Rondas compactas (para score grande en LIVE) */
   const { t1ct, t1t, t2ct, t2t } = getRounds(match);
-  const roundScore1 = sumMaybe(t1ct, t1t);
-  const roundScore2 = sumMaybe(t2ct, t2t);
+  const rounds1 = (t1ct ?? 0) + (t1t ?? 0);
+  const rounds2 = (t2ct ?? 0) + (t2t ?? 0);
 
-  // mapas ganados -> diamantes
-  const wins1 = pickSeriesWins(match, 0);
-  const wins2 = pickSeriesWins(match, 1);
-  const bestOf = getBestOf(match, wins1, wins2);
+  /* Series (diamantes) desde match.series */
+  const wins1 = match.series?.wins1 ?? 0;
+  const wins2 = match.series?.wins2 ?? 0;
+  const bestOf = match.series?.bestOf ?? getBestOf(match, s1, s2);
 
   return (
     <div className={`sched ${isLive ? "is-live" : ""}`}>
+      {/* overlay global leve */}
       <div className="sched__overlay" />
 
+      {/* === FONDO: MAPA (cinta centrada) === */}
       {match.mapImage && (
         <div className="sched__bg" aria-hidden="true">
           <div className="sched__center">
@@ -212,6 +306,7 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
         </div>
       )}
 
+      {/* contenido */}
       <div className="sched__grid">
         {/* fecha / hora */}
         <div className="time">
@@ -229,16 +324,17 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
         {/* marcador */}
         <div className="scorebox">
           <div className="scorebox__content">
+            {/* fila principal */}
             <div className="scorebox__row">
               <span className="score score--left">
-                <span className="score__num">{roundScore1 ?? "–"}</span>
+                <span className="score__num">{isLive ? rounds1 : (s1 ?? "–")}</span>
                 {fmtRoundsCompact(t1ct, t1t)}
               </span>
 
               <span className="vs">VS</span>
 
               <span className="score">
-                <span className="score__num">{roundScore2 ?? "–"}</span>
+                <span className="score__num">{isLive ? rounds2 : (s2 ?? "–")}</span>
                 {fmtRoundsCompact(t2ct, t2t)}
               </span>
             </div>
@@ -246,11 +342,14 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
             {/* diamantes SOLO en LIVE */}
             {isLive && (
               <div className="series-row" aria-hidden="true">
-                <SeriesDiamonds wins={wins1} total={bestOf} side="left" />
+                <SeriesDiamonds wins={wins1} bestOf={bestOf} side="left" />
                 <span className="vs vs--ghost">VS</span>
-                <SeriesDiamonds wins={wins2} total={bestOf} side="right" />
+                <SeriesDiamonds wins={wins2} bestOf={bestOf} side="right" />
               </div>
             )}
+
+            {/* Si no quieres mostrar torneo/mapa, deja vacía o elimina esta línea */}
+            {/* <div className="meta-line">{phaseFromEvent(match.event)} · {tierLabel(match.event)} {match.currentMap ? ` · ${match.currentMap.toUpperCase()}` : ""}</div> */}
           </div>
         </div>
 

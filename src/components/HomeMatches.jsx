@@ -74,6 +74,7 @@ function teamsRoughEqual(a = "", b = "") {
 /* ================== Feed helpers ================== */
 async function fetchLiveSegmentsFromProxy() {
   try {
+    // cache-buster para evitar respuestas viejas del proxy/CDN
     const r = await fetch(`/api/vlrgg/list?q=live_score&_=${Date.now()}`, { cache: "no-store" });
     if (!r.ok) return [];
     const j = await r.json();
@@ -100,6 +101,37 @@ function getSegRounds(seg = {}) {
   };
 }
 
+const toInt = (x) => {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+};
+
+function getSegSeries(seg = {}) {
+  // wins (mapas ganados en la serie)
+  const wins1 =
+    toInt(seg.series_score1) ??
+    toInt(seg.maps1) ??
+    toInt(seg.series1) ??
+    toInt(seg.score1); // muchos feeds lo usan como series
+
+  const wins2 =
+    toInt(seg.series_score2) ??
+    toInt(seg.maps2) ??
+    toInt(seg.series2) ??
+    toInt(seg.score2);
+
+  // best of
+  const bestOf =
+    toInt(seg.best_of) ??
+    toInt(seg.bo) ??
+    toInt(seg.max_maps) ??
+    toInt(seg.series_best_of) ??
+    toInt(seg.format?.bo) ??
+    null;
+
+  return { wins1: wins1 ?? 0, wins2: wins2 ?? 0, bestOf };
+}
+
 /* ================== Decoradores de mapa ================== */
 function getMapNameLocal(m = {}) {
   return (
@@ -122,6 +154,7 @@ function decorateWithLocalMap(m) {
 }
 
 /* ================== Hidrataciones ================== */
+/** Promueve a LIVE si el segmento lo marca + actualiza currentMap/scores/rounds + series */
 function hydrateWithSegmentsOnce(matches, segments) {
   if (!segments?.length) return matches;
 
@@ -150,34 +183,43 @@ function hydrateWithSegmentsOnce(matches, segments) {
 
     if (!hit) return m;
 
-    const nextStatus = hit.isLiveSeg ? "LIVE" : m.status || "UPCOMING";
-    const segMap = getSegMapName(hit.raw);
-    const rounds = getSegRounds(hit.raw);
+    const seg = hit.raw;
 
-    // series wins (mapas ganados)
-    const s1 = Number(hit.raw?.score1);
-    const s2 = Number(hit.raw?.score2);
-    const score1 = Number.isFinite(s1) ? s1 : m?.teams?.[0]?.score ?? null;
-    const score2 = Number.isFinite(s2) ? s2 : m?.teams?.[1]?.score ?? null;
+    const nextStatus = hit.isLiveSeg ? "LIVE" : m.status || "UPCOMING";
+    const segMap = getSegMapName(seg);
+    const rounds = getSegRounds(seg);
+    const series = getSegSeries(seg);
 
     return {
       ...m,
       status: nextStatus,
       currentMap: segMap || m.currentMap || null,
       mapImage: segMap ? resolveMapImage(segMap) : m.mapImage || null,
-      vlrUrl: hit.raw?.match_page || m.vlrUrl,
-      mapNumber: hit.raw?.map_number ?? m.mapNumber,
+      vlrUrl: seg.match_page || m.vlrUrl,
+      mapNumber: seg.map_number ?? m.mapNumber,
+
+      // rondas del mapa actual (para score grande)
       rounds,
+
+      // datos de la serie (para diamantes)
+      series: {
+        bestOf: series.bestOf ?? m.series?.bestOf ?? null,
+        wins1: series.wins1 ?? m.series?.wins1 ?? 0,
+        wins2: series.wins2 ?? m.series?.wins2 ?? 0,
+      },
+
+      // NO tocar teams[].score (lo usamos solo como fallback cuando no está LIVE)
       teams: [
-        { ...(m.teams?.[0] || {}), score: nextStatus === "UPCOMING" ? null : score1 },
-        { ...(m.teams?.[1] || {}), score: nextStatus === "UPCOMING" ? null : score2 },
+        { ...(m.teams?.[0] || {}) },
+        { ...(m.teams?.[1] || {}) },
       ],
     };
   });
 }
 
+/** Fallback: revalida currentMap por match_page (re-usa live_score) */
 async function hydratePreciselyOnce(matches) {
-  const segs = await fetchLiveSegmentsFromProxy();
+  const segs = await fetchLiveSegmentsFromProxy(); // usa snapshot más nuevo
   const prepared = segs.map((seg) => ({
     raw: seg,
     url: (seg?.match_page || "").trim(),
@@ -189,15 +231,28 @@ async function hydratePreciselyOnce(matches) {
     const hit = prepared.find((p) => p.url === m.vlrUrl.trim());
     if (!hit) return m;
 
-    const segMap = getSegMapName(hit.raw);
-    const rounds = getSegRounds(hit.raw);
+    const seg = hit.raw;
+    const segMap = getSegMapName(seg);
+    const rounds = getSegRounds(seg);
+    const series = getSegSeries(seg);
+
+    let next = { ...m };
+
     if (segMap && segMap !== m.currentMap) {
-      return { ...m, currentMap: segMap, mapImage: resolveMapImage(segMap), rounds };
+      next.currentMap = segMap;
+      next.mapImage = resolveMapImage(segMap);
     }
     if (rounds && JSON.stringify(rounds) !== JSON.stringify(m.rounds)) {
-      return { ...m, rounds };
+      next.rounds = rounds;
     }
-    return m;
+    if (series) {
+      next.series = {
+        bestOf: series.bestOf ?? next.series?.bestOf ?? null,
+        wins1: series.wins1 ?? next.series?.wins1 ?? 0,
+        wins2: series.wins2 ?? next.series?.wins2 ?? 0,
+      };
+    }
+    return next;
   });
 
   return updated;
@@ -210,7 +265,7 @@ export default function HomeMatches({ today, next, completed }) {
   const [logoMap, setLogoMap] = useState({});
   const [teamList, setTeamList] = useState([]);
 
-  // Demo LIVE
+  // Demo LIVE (Bo3, SEN 1–0). El número grande sale de rounds (CT+T).
   const demoLiveMatch = useMemo(() => {
     const currentMap = "icebox";
     return {
@@ -219,27 +274,24 @@ export default function HomeMatches({ today, next, completed }) {
       startTs: Date.now() - 25 * 60 * 1000,
       event: "PLAYOFFS • VCT",
 
-      bestOf: 3, // Bo3
-
-      // 👇 ESTO es "mapas ganados" (para los diamantes)
-      teams: [
-        { name: "G2 Esports", score: 0 },
-        { name: "SENTINELS",  score: 1 },
-      ],
-
-      // 👇 Esto es el mapa actual (para el score grande)
       currentMap,
       mapImage: resolveMapImage(currentMap),
       in: null,
-      rounds: {
-        t1ct: 4,
-        t1t:  6,
-        t2ct: 8,
-        t2t:  4,
-      },
+
+      // Rondas actuales (para el score grande)
+      rounds: { t1ct: 4, t1t: 6, t2ct: 8, t2t: 4 },
+
+      // Serie (para diamantes)
+      series: { bestOf: 3, wins1: 0, wins2: 1 },
+
+      teams: [
+        { name: "G2 Esports" },
+        { name: "SENTINELS" },
+      ],
     };
   }, []);
 
+  // Base lists (del feed server)
   const baseUpcoming = useMemo(() => {
     const a = today?.items || [];
     const b = next?.items || [];
@@ -251,13 +303,19 @@ export default function HomeMatches({ today, next, completed }) {
     [completed]
   );
 
+  // Estado + refs para evitar stale-closure en polling
   const [upcoming, setUpcoming] = useState(baseUpcoming);
   const [completedList, setCompletedList] = useState(baseCompleted);
   const upRef = useRef(upcoming);
   const compRef = useRef(completedList);
-  useEffect(() => { upRef.current = upcoming; }, [upcoming]);
-  useEffect(() => { compRef.current = completedList; }, [completedList]);
+  useEffect(() => {
+    upRef.current = upcoming;
+  }, [upcoming]);
+  useEffect(() => {
+    compRef.current = completedList;
+  }, [completedList]);
 
+  // Primera hidratación + logos
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -285,9 +343,12 @@ export default function HomeMatches({ today, next, completed }) {
         setTeamList(cache?.teamList || []);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [baseUpcoming, baseCompleted]);
 
+  // Polling (usa refs para leer el estado más reciente)
   useEffect(() => {
     let cancelled = false;
 
@@ -309,11 +370,15 @@ export default function HomeMatches({ today, next, completed }) {
 
     tick();
     const id = setInterval(tick, POLL_MS);
-    return () => { cancelled = true; clearInterval(id); };
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, []);
 
   return (
     <div className="home-matches">
+      {/* Upcoming */}
       <section className="block">
         <div className="block__head">
           <h2 className="block__title text-3xl font-bold mb-10">Upcoming matches</h2>
@@ -329,6 +394,7 @@ export default function HomeMatches({ today, next, completed }) {
         )}
       </section>
 
+      {/* Completed */}
       <section className="block">
         <div className="block__head">
           <h2 className="block__title text-3xl font-bold mb-10">Completed matches</h2>
