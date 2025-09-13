@@ -231,8 +231,14 @@ export default function HomeMatches({ today, next, completed }) {
       currentMap,
       mapImage: resolveMapImage(currentMap),
       in: null,
-    };
-  }, []);
+      rounds: {
+      t1ct: 3,
+      t1t:  6,
+      t2ct: 5,
+      t2t:  8,
+    },
+  };
+}, []);
 
   // Base lists (del feed server)
   const baseUpcoming = useMemo(() => {

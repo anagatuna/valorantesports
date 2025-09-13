@@ -150,13 +150,39 @@ function getRounds(match) {
   };
 }
 
+/** Devuelve JSX coloreable en vez de string plano */
 function fmtRoundsCompact(ct, t) {
   const hasCT = ct !== null && ct !== undefined;
   const hasT  = t  !== null && t  !== undefined;
-  if (!hasCT && !hasT) return "";
-  if (hasCT && hasT) return `(${ct}/${t})`;
-  if (hasCT)          return `(${ct} CT)`;
-  return `(${t} T)`;
+  if (!hasCT && !hasT) return null;
+
+  if (hasCT && hasT) {
+    return (
+      <span className="score__rnd">
+        <span className="par">(</span>
+        <span className="ct">{ct}</span>
+        <span className="sep">/</span>
+        <span className="t">{t}</span>
+        <span className="par">)</span>
+      </span>
+    );
+  }
+  if (hasCT) {
+    return (
+      <span className="score__rnd">
+        <span className="par">(</span>
+        <span className="ct">{ct}</span>
+        <span className="par"> CT)</span>
+      </span>
+    );
+  }
+  return (
+    <span className="score__rnd">
+      <span className="par">(</span>
+      <span className="t">{t}</span>
+      <span className="par"> T)</span>
+    </span>
+  );
 }
 
 /* ===== Componente ===== */
@@ -201,10 +227,8 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
     return "FINAL";
   }, [mounted, now, match.status, match.startTs, match.in]);
 
-  /* === Rondas compactas (al lado del score) === */
+  /* Rondas compactas */
   const { t1ct, t1t, t2ct, t2t } = getRounds(match);
-  const r1Text = fmtRoundsCompact(t1ct, t1t);
-  const r2Text = fmtRoundsCompact(t2ct, t2t);
 
   return (
     <div className={`sched ${isLive ? "is-live" : ""}`}>
@@ -256,18 +280,25 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
           <div className="team__name">{t1?.name ?? "—"}</div>
         </div>
 
-        {/* marcador (solo agregamos rondas compactas al lado del score) */}
+        {/* marcador */}
         <div className="scorebox">
           <div className="scorebox__content">
             <div className="scorebox__row">
-              <span className="score">
-                {s1 ?? "–"}{r1Text && <span className="score__rnd"> {r1Text}</span>}
+              {/* IZQ: (ct/t) 2 */}
+              <span className="score score--left">
+                <span className="score__num">{s1 ?? "–"}</span>
+                {fmtRoundsCompact(t1ct, t1t)}
               </span>
+
               <span className="vs">VS</span>
+
+              {/* DER: 10 (ct/t) */}
               <span className="score">
-                {s2 ?? "–"}{r2Text && <span className="score__rnd"> {r2Text}</span>}
+                <span className="score__num">{s2 ?? "–"}</span>
+                {fmtRoundsCompact(t2ct, t2t)}
               </span>
             </div>
+
             <div className="meta-line">
               {phaseFromEvent(match.event)} · {tierLabel(match.event)}
               {match.currentMap ? ` · ${match.currentMap.toUpperCase()}` : ""}
