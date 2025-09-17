@@ -1,3 +1,4 @@
+// src/components/HomeMatches.jsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -88,10 +89,16 @@ function getSegMapName(seg = {}) {
   return seg?.current_map || seg?.actual_map || seg?.map || seg?.currentMap || seg?.actualMap || null;
 }
 
+/* ===== Rondas: parseo directo del feed ===== */
+const toInt = (x) => {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+};
+
 function getSegRounds(seg = {}) {
   const n = (x) => {
     const v = Number(x);
-    return Number.isFinite(v) ? v : null;
+    return Number.isFinite(v) ? v : null; // "N/A" => null
   };
   return {
     t1ct: n(seg?.team1_round_ct),
@@ -101,18 +108,13 @@ function getSegRounds(seg = {}) {
   };
 }
 
-const toInt = (x) => {
-  const n = Number(x);
-  return Number.isFinite(n) ? n : null;
-};
-
+/* ===== Series (wins/bestOf) desde el feed ===== */
 function getSegSeries(seg = {}) {
-  // wins (mapas ganados en la serie)
   const wins1 =
     toInt(seg.series_score1) ??
     toInt(seg.maps1) ??
     toInt(seg.series1) ??
-    toInt(seg.score1); // muchos feeds lo usan como series
+    toInt(seg.score1);
 
   const wins2 =
     toInt(seg.series_score2) ??
@@ -120,7 +122,6 @@ function getSegSeries(seg = {}) {
     toInt(seg.series2) ??
     toInt(seg.score2);
 
-  // best of
   const bestOf =
     toInt(seg.best_of) ??
     toInt(seg.bo) ??
@@ -130,6 +131,57 @@ function getSegSeries(seg = {}) {
     null;
 
   return { wins1: wins1 ?? 0, wins2: wins2 ?? 0, bestOf };
+}
+
+/* ===== Clave estable de mapa (sin map_number para evitar rebotes) ===== */
+const mapKeyOf = (seg) =>
+  String(seg?.current_map || seg?.map || "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .trim();
+
+/* ===== Acumulador de rondas (monotónico + anti-regresión) =====
+   - Si llega número: next = max(prev, nuevo)
+   - Si llega "N/A": conserva el previo
+   - Si cambia el mapa (key distinta): resetea a 0/0/0/0
+   - Si el total baja en el mismo mapa, ignora el snapshot (feed regresivo)
+   - Si alguien ya llegó a 13, congela hasta que cambie el mapa
+*/
+function mergeLiveRounds(prevRounds = null, seg = null, prevKey = "") {
+  const cur = getSegRounds(seg);
+  const key = mapKeyOf(seg);
+
+  const sameMap = key && prevKey && key === prevKey;
+  const base =
+    sameMap && prevRounds
+      ? { ...prevRounds }
+      : { t1ct: 0, t1t: 0, t2ct: 0, t2t: 0 };
+
+  const next = { ...base };
+  for (const k of ["t1ct", "t1t", "t2ct", "t2t"]) {
+    if (cur[k] != null) next[k] = Math.max(base[k] || 0, cur[k]);
+  }
+
+  const sum1 = (next.t1ct || 0) + (next.t1t || 0);
+  const sum2 = (next.t2ct || 0) + (next.t2t || 0);
+  const prevSum1 = (base.t1ct || 0) + (base.t1t || 0);
+  const prevSum2 = (base.t2ct || 0) + (base.t2t || 0);
+
+  if (sameMap) {
+    const tot = sum1 + sum2;
+    const prevTot = prevSum1 + prevSum2;
+    if (tot + 2 <= prevTot) {
+      // snapshot regresivo → ignóralo
+      return { rounds: base, mapKey: prevKey };
+    }
+  }
+
+  if (sameMap && (sum1 >= 13 || sum2 >= 13)) {
+    // mapa terminado, mantén los valores hasta que cambie la key
+    return { rounds: next, mapKey: key };
+  }
+
+  return { rounds: next, mapKey: key };
 }
 
 /* ================== Decoradores de mapa ================== */
@@ -154,7 +206,7 @@ function decorateWithLocalMap(m) {
 }
 
 /* ================== Hidrataciones ================== */
-/** Promueve a LIVE si el segmento lo marca + actualiza currentMap/scores/rounds + series */
+/** Promueve a LIVE si el segmento lo marca + actualiza currentMap + RONDAS acumuladas + SERIES */
 function hydrateWithSegmentsOnce(matches, segments) {
   if (!segments?.length) return matches;
 
@@ -184,10 +236,14 @@ function hydrateWithSegmentsOnce(matches, segments) {
     if (!hit) return m;
 
     const seg = hit.raw;
-
     const nextStatus = hit.isLiveSeg ? "LIVE" : m.status || "UPCOMING";
     const segMap = getSegMapName(seg);
-    const rounds = getSegRounds(seg);
+
+    // Rondas acumuladas (mantiene CT/T separados y conserva "N/A")
+    const merged = mergeLiveRounds(m.rounds, seg, m._mapKey);
+    const rounds = merged.rounds;
+
+    // Serie (wins & bestOf)
     const series = getSegSeries(seg);
 
     return {
@@ -198,28 +254,24 @@ function hydrateWithSegmentsOnce(matches, segments) {
       vlrUrl: seg.match_page || m.vlrUrl,
       mapNumber: seg.map_number ?? m.mapNumber,
 
-      // rondas del mapa actual (para score grande)
+      _mapKey: merged.mapKey,
       rounds,
 
-      // datos de la serie (para diamantes)
       series: {
         bestOf: series.bestOf ?? m.series?.bestOf ?? null,
         wins1: series.wins1 ?? m.series?.wins1 ?? 0,
         wins2: series.wins2 ?? m.series?.wins2 ?? 0,
       },
 
-      // NO tocar teams[].score (lo usamos solo como fallback cuando no está LIVE)
-      teams: [
-        { ...(m.teams?.[0] || {}) },
-        { ...(m.teams?.[1] || {}) },
-      ],
+      // NO tocar teams[].score (solo fallback fuera de LIVE)
+      teams: [{ ...(m.teams?.[0] || {}) }, { ...(m.teams?.[1] || {}) }],
     };
   });
 }
 
-/** Fallback: revalida currentMap por match_page (re-usa live_score) */
+/** Revalida usando la foto más nueva del mismo endpoint */
 async function hydratePreciselyOnce(matches) {
-  const segs = await fetchLiveSegmentsFromProxy(); // usa snapshot más nuevo
+  const segs = await fetchLiveSegmentsFromProxy();
   const prepared = segs.map((seg) => ({
     raw: seg,
     url: (seg?.match_page || "").trim(),
@@ -228,23 +280,25 @@ async function hydratePreciselyOnce(matches) {
   const updated = matches.map((m) => {
     const isLive = String(m?.status || "").toUpperCase() === "LIVE";
     if (!isLive || !m?.vlrUrl) return m;
-    const hit = prepared.find((p) => p.url === m.vlrUrl.trim());
+
+    const hit = prepared.find((p) => p.url === (m.vlrUrl || "").trim());
     if (!hit) return m;
 
     const seg = hit.raw;
     const segMap = getSegMapName(seg);
-    const rounds = getSegRounds(seg);
-    const series = getSegSeries(seg);
 
-    let next = { ...m };
+    // Rondas acumuladas y reset si cambia de mapa
+    const merged = mergeLiveRounds(m.rounds, seg, m._mapKey);
+
+    let next = { ...m, _mapKey: merged.mapKey, rounds: merged.rounds };
 
     if (segMap && segMap !== m.currentMap) {
       next.currentMap = segMap;
       next.mapImage = resolveMapImage(segMap);
     }
-    if (rounds && JSON.stringify(rounds) !== JSON.stringify(m.rounds)) {
-      next.rounds = rounds;
-    }
+
+    // Serie (refresco)
+    const series = getSegSeries(seg);
     if (series) {
       next.series = {
         bestOf: series.bestOf ?? next.series?.bestOf ?? null,
@@ -252,6 +306,10 @@ async function hydratePreciselyOnce(matches) {
         wins2: series.wins2 ?? next.series?.wins2 ?? 0,
       };
     }
+
+    // Debug opcional:
+    // console.debug("LIVE ROUNDS", { key: merged.mapKey, rounds: merged.rounds, cur: seg.current_map });
+
     return next;
   });
 
@@ -265,7 +323,7 @@ export default function HomeMatches({ today, next, completed }) {
   const [logoMap, setLogoMap] = useState({});
   const [teamList, setTeamList] = useState([]);
 
-  // Demo LIVE (Bo3, SEN 1–0). El número grande sale de rounds (CT+T).
+  // Demo LIVE (Bo3, SEN 1–0). El número grande sale de rounds (CT+T) y se mantiene separado (CT/T).
   const demoLiveMatch = useMemo(() => {
     const currentMap = "icebox";
     return {
@@ -278,16 +336,14 @@ export default function HomeMatches({ today, next, completed }) {
       mapImage: resolveMapImage(currentMap),
       in: null,
 
-      // Rondas actuales (para el score grande)
+      // Rondas actuales (para el score grande).  Ej: G2: 4CT + 6T = 10, SEN: 8CT + 4T = 12
       rounds: { t1ct: 4, t1t: 6, t2ct: 8, t2t: 4 },
+      _mapKey: "icebox", // clave estable
 
       // Serie (para diamantes)
       series: { bestOf: 3, wins1: 0, wins2: 1 },
 
-      teams: [
-        { name: "G2 Esports" },
-        { name: "SENTINELS" },
-      ],
+      teams: [{ name: "G2 Esports" }, { name: "SENTINELS" }],
     };
   }, []);
 
@@ -348,7 +404,7 @@ export default function HomeMatches({ today, next, completed }) {
     };
   }, [baseUpcoming, baseCompleted]);
 
-  // Polling (usa refs para leer el estado más reciente)
+  // Polling
   useEffect(() => {
     let cancelled = false;
 
