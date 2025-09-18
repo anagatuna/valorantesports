@@ -89,26 +89,12 @@ function getSegMapName(seg = {}) {
   return seg?.current_map || seg?.actual_map || seg?.map || seg?.currentMap || seg?.actualMap || null;
 }
 
-/* ===== Rondas: parseo directo del feed ===== */
+/* ================== Rondas (lectura de feed) ================== */
 const toInt = (x) => {
   const n = Number(x);
   return Number.isFinite(n) ? n : null;
 };
 
-function getSegRounds(seg = {}) {
-  const n = (x) => {
-    const v = Number(x);
-    return Number.isFinite(v) ? v : null; // "N/A" => null
-  };
-  return {
-    t1ct: n(seg?.team1_round_ct),
-    t1t: n(seg?.team1_round_t),
-    t2ct: n(seg?.team2_round_ct),
-    t2t: n(seg?.team2_round_t),
-  };
-}
-
-/* ===== Series (wins/bestOf) desde el feed ===== */
 function getSegSeries(seg = {}) {
   const wins1 =
     toInt(seg.series_score1) ??
@@ -133,55 +119,111 @@ function getSegSeries(seg = {}) {
   return { wins1: wins1 ?? 0, wins2: wins2 ?? 0, bestOf };
 }
 
-/* ===== Clave estable de mapa (sin map_number para evitar rebotes) ===== */
+/* ===== Clave estable de mapa ===== */
 const mapKeyOf = (seg) =>
   String(seg?.current_map || seg?.map || "")
     .toLowerCase()
     .replace(/\s+/g, "")
     .trim();
 
-/* ===== Acumulador de rondas (monotónico + anti-regresión) =====
-   - Si llega número: next = max(prev, nuevo)
-   - Si llega "N/A": conserva el previo
-   - Si cambia el mapa (key distinta): resetea a 0/0/0/0
-   - Si el total baja en el mismo mapa, ignora el snapshot (feed regresivo)
-   - Si alguien ya llegó a 13, congela hasta que cambie el mapa
+/* ================== Reconstrucción CT/T con OT ==================
+   El feed solo incrementa el lado con el que arrancó cada team y deja "N/A" el otro.
+   Reconstruimos CT/T:
+   - Rondas 0–11  (total<12):  sumamos al lado inicial.
+   - Rondas 12–23 (12<=total<24): sumamos al lado opuesto.
+   - Overtime (total>=24): alterna CADA RONDA (set de 2: cada team juega 1 CT y 1 T).
+   Nota: No conocemos el orden exacto de victorias dentro del intervalo, así que asignamos
+   los 'wins' del team siguiendo el patrón de lados desde el índice de ronda actual.
 */
-function mergeLiveRounds(prevRounds = null, seg = null, prevKey = "") {
-  const cur = getSegRounds(seg);
+function readProvided(seg = {}, team = 1) {
+  const ct = Number(seg?.[`team_${team}_round_ct`]) || Number(seg?.[`team${team}_round_ct`]);
+  const t  = Number(seg?.[`team_${team}_round_t`])  || Number(seg?.[`team${team}_round_t`]);
+  const hasCT = Number.isFinite(ct);
+  const hasT  = Number.isFinite(t);
+  return {
+    provided: hasCT ? ct : (hasT ? t : null),
+    side: hasCT ? "CT" : (hasT ? "T" : null),
+  };
+}
+function opposite(side) { return side === "CT" ? "T" : side === "T" ? "CT" : null; }
+
+/** lado que juega un team en la ronda (0-based) dadas sus sides iniciales */
+function sideForRound(startSide, roundIndex) {
+  if (!startSide) return null;
+  if (roundIndex < 12) return startSide;                // primera mitad
+  if (roundIndex < 24) return opposite(startSide);      // segunda mitad
+  // OT: alterna cada ronda a partir de la 24 (r=24 → cambia respecto a 2ª mitad)
+  return ((roundIndex - 24) % 2 === 0) ? opposite(startSide) : startSide;
+}
+
+/** reparte 'wins' de un team a CT/T siguiendo el patrón de lados desde 'fromRound' */
+function distributeByPattern(startSide, fromRound, wins) {
+  let ct = 0, t = 0;
+  for (let i = 0; i < wins; i++) {
+    const side = sideForRound(startSide, fromRound + i);
+    if (side === "CT") ct++; else if (side === "T") t++;
+  }
+  return { ct, t };
+}
+
+/** Anti-regresión: si el snapshot tiene MUCHAS menos rondas que antes, ignorar */
+function looksRegressive(prevTotals, curTotals) {
+  return curTotals + 2 <= prevTotals; // tolerancia 2
+}
+
+function mergeLiveRounds(prevRounds = null, seg = null, prevKey = "", prevMeta = {}) {
   const key = mapKeyOf(seg);
-
   const sameMap = key && prevKey && key === prevKey;
-  const base =
-    sameMap && prevRounds
-      ? { ...prevRounds }
-      : { t1ct: 0, t1t: 0, t2ct: 0, t2t: 0 };
 
-  const next = { ...base };
-  for (const k of ["t1ct", "t1t", "t2ct", "t2t"]) {
-    if (cur[k] != null) next[k] = Math.max(base[k] || 0, cur[k]);
+  // estado base
+  const baseRounds = sameMap && prevRounds ? { ...prevRounds } : { t1ct:0, t1t:0, t2ct:0, t2t:0 };
+  const baseMeta   = sameMap && prevMeta ? { ...prevMeta } : { start1:null, start2:null, _prov1:0, _prov2:0, _total:0 };
+
+  // lecturas sesgadas (campo que SÍ crece en cada team)
+  const r1 = readProvided(seg, 1);
+  const r2 = readProvided(seg, 2);
+
+  // inicializar lados de arranque si aún no los conocemos
+  if (!baseMeta.start1 && r1.side) baseMeta.start1 = r1.side;
+  if (!baseMeta.start2 && r2.side) baseMeta.start2 = r2.side;
+
+  const prov1 = Number.isFinite(r1.provided) ? r1.provided : baseMeta._prov1;
+  const prov2 = Number.isFinite(r2.provided) ? r2.provided : baseMeta._prov2;
+
+  // totales
+  const prevTotal = (baseMeta._prov1 || 0) + (baseMeta._prov2 || 0);
+  const curTotal  = prov1 + prov2;
+
+  // snapshot regresivo → ignóralo
+  if (sameMap && looksRegressive(prevTotal, curTotal)) {
+    return { rounds: baseRounds, mapKey: prevKey, meta: baseMeta };
   }
 
-  const sum1 = (next.t1ct || 0) + (next.t1t || 0);
-  const sum2 = (next.t2ct || 0) + (next.t2t || 0);
-  const prevSum1 = (base.t1ct || 0) + (base.t1t || 0);
-  const prevSum2 = (base.t2ct || 0) + (base.t2t || 0);
+  // deltas (crecimientos)
+  const d1 = Math.max(0, prov1 - (baseMeta._prov1 || 0));
+  const d2 = Math.max(0, prov2 - (baseMeta._prov2 || 0));
 
-  if (sameMap) {
-    const tot = sum1 + sum2;
-    const prevTot = prevSum1 + prevSum2;
-    if (tot + 2 <= prevTot) {
-      // snapshot regresivo → ignóralo
-      return { rounds: base, mapKey: prevKey };
-    }
+  // distribuir por patrón (incluye OT alternando por ronda)
+  if (d1 > 0 && baseMeta.start1) {
+    const dist = distributeByPattern(baseMeta.start1, prevTotal, d1);
+    baseRounds.t1ct += dist.ct;
+    baseRounds.t1t  += dist.t;
+  }
+  if (d2 > 0 && baseMeta.start2) {
+    const dist = distributeByPattern(baseMeta.start2, prevTotal, d2);
+    baseRounds.t2ct += dist.ct;
+    baseRounds.t2t  += dist.t;
   }
 
-  if (sameMap && (sum1 >= 13 || sum2 >= 13)) {
-    // mapa terminado, mantén los valores hasta que cambie la key
-    return { rounds: next, mapKey: key };
-  }
+  // actualizar meta
+  const meta = {
+    ...baseMeta,
+    _prov1: prov1,
+    _prov2: prov2,
+    _total: curTotal,
+  };
 
-  return { rounds: next, mapKey: key };
+  return { rounds: baseRounds, mapKey: key, meta };
 }
 
 /* ================== Decoradores de mapa ================== */
@@ -214,6 +256,7 @@ function hydrateWithSegmentsOnce(matches, segments) {
     raw: seg,
     t1: clean(seg?.team1 || ""),
     t2: clean(seg?.team2 || ""),
+    url: (seg?.match_page || "").trim(),
     isLiveSeg: String(seg?.time_until_match || "").toUpperCase().includes("LIVE"),
   }));
 
@@ -239,11 +282,8 @@ function hydrateWithSegmentsOnce(matches, segments) {
     const nextStatus = hit.isLiveSeg ? "LIVE" : m.status || "UPCOMING";
     const segMap = getSegMapName(seg);
 
-    // Rondas acumuladas (mantiene CT/T separados y conserva "N/A")
-    const merged = mergeLiveRounds(m.rounds, seg, m._mapKey);
+    const merged = mergeLiveRounds(m.rounds, seg, m._mapKey, m._mapMeta);
     const rounds = merged.rounds;
-
-    // Serie (wins & bestOf)
     const series = getSegSeries(seg);
 
     return {
@@ -255,6 +295,7 @@ function hydrateWithSegmentsOnce(matches, segments) {
       mapNumber: seg.map_number ?? m.mapNumber,
 
       _mapKey: merged.mapKey,
+      _mapMeta: merged.meta,
       rounds,
 
       series: {
@@ -263,7 +304,6 @@ function hydrateWithSegmentsOnce(matches, segments) {
         wins2: series.wins2 ?? m.series?.wins2 ?? 0,
       },
 
-      // NO tocar teams[].score (solo fallback fuera de LIVE)
       teams: [{ ...(m.teams?.[0] || {}) }, { ...(m.teams?.[1] || {}) }],
     };
   });
@@ -287,17 +327,15 @@ async function hydratePreciselyOnce(matches) {
     const seg = hit.raw;
     const segMap = getSegMapName(seg);
 
-    // Rondas acumuladas y reset si cambia de mapa
-    const merged = mergeLiveRounds(m.rounds, seg, m._mapKey);
+    const merged = mergeLiveRounds(m.rounds, seg, m._mapKey, m._mapMeta);
 
-    let next = { ...m, _mapKey: merged.mapKey, rounds: merged.rounds };
+    let next = { ...m, _mapKey: merged.mapKey, _mapMeta: merged.meta, rounds: merged.rounds };
 
     if (segMap && segMap !== m.currentMap) {
       next.currentMap = segMap;
       next.mapImage = resolveMapImage(segMap);
     }
 
-    // Serie (refresco)
     const series = getSegSeries(seg);
     if (series) {
       next.series = {
@@ -306,14 +344,19 @@ async function hydratePreciselyOnce(matches) {
         wins2: series.wins2 ?? next.series?.wins2 ?? 0,
       };
     }
-
-    // Debug opcional:
-    // console.debug("LIVE ROUNDS", { key: merged.mapKey, rounds: merged.rounds, cur: seg.current_map });
-
     return next;
   });
 
   return updated;
+}
+
+/* ================== Clasificación a Completed ================== */
+function isMapFinal(r) {
+  const a = (r?.t1ct || 0) + (r?.t1t || 0);
+  const b = (r?.t2ct || 0) + (r?.t2t || 0);
+  const mx = Math.max(a, b), mn = Math.min(a, b);
+  // Regla práctica: 13 con diferencia 2 (tiempo regular) o >=14 (OT)
+  return (mx >= 13 && mx - mn >= 2) || mx >= 14;
 }
 
 /* ================== Componente ================== */
@@ -323,7 +366,7 @@ export default function HomeMatches({ today, next, completed }) {
   const [logoMap, setLogoMap] = useState({});
   const [teamList, setTeamList] = useState([]);
 
-  // Demo LIVE (Bo3, SEN 1–0). El número grande sale de rounds (CT+T) y se mantiene separado (CT/T).
+  // Demo LIVE
   const demoLiveMatch = useMemo(() => {
     const currentMap = "icebox";
     return {
@@ -336,11 +379,10 @@ export default function HomeMatches({ today, next, completed }) {
       mapImage: resolveMapImage(currentMap),
       in: null,
 
-      // Rondas actuales (para el score grande).  Ej: G2: 4CT + 6T = 10, SEN: 8CT + 4T = 12
       rounds: { t1ct: 4, t1t: 6, t2ct: 8, t2t: 4 },
-      _mapKey: "icebox", // clave estable
+      _mapKey: "icebox",
+      _mapMeta: { start1: "CT", start2: "T", _prov1: 10, _prov2: 12, _total: 22 },
 
-      // Serie (para diamantes)
       series: { bestOf: 3, wins1: 0, wins2: 1 },
 
       teams: [{ name: "G2 Esports" }, { name: "SENTINELS" }],
@@ -364,12 +406,8 @@ export default function HomeMatches({ today, next, completed }) {
   const [completedList, setCompletedList] = useState(baseCompleted);
   const upRef = useRef(upcoming);
   const compRef = useRef(completedList);
-  useEffect(() => {
-    upRef.current = upcoming;
-  }, [upcoming]);
-  useEffect(() => {
-    compRef.current = completedList;
-  }, [completedList]);
+  useEffect(() => { upRef.current = upcoming; }, [upcoming]);
+  useEffect(() => { compRef.current = completedList; }, [completedList]);
 
   // Primera hidratación + logos
   useEffect(() => {
@@ -388,8 +426,12 @@ export default function HomeMatches({ today, next, completed }) {
       const hyd2U = await hydratePreciselyOnce(hyd1U);
       const hyd2C = await hydratePreciselyOnce(hyd1C);
       if (!cancelled) {
-        setUpcoming(hyd2U);
-        setCompletedList(hyd2C);
+        // reclasificar finalizados
+        const readyU = hyd2U.map(m => (m.status === "LIVE" && isMapFinal(m.rounds)) ? { ...m, status: "FINAL" } : m);
+        const stayUp = readyU.filter(m => m.status !== "FINAL");
+        const moved  = readyU.filter(m => m.status === "FINAL");
+        setUpcoming(stayUp);
+        setCompletedList(hyd2C.concat(moved));
       }
 
       const visible = [...hyd2U, ...hyd2C];
@@ -399,9 +441,7 @@ export default function HomeMatches({ today, next, completed }) {
         setTeamList(cache?.teamList || []);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [baseUpcoming, baseCompleted]);
 
   // Polling
@@ -419,17 +459,19 @@ export default function HomeMatches({ today, next, completed }) {
       const twoC = await hydratePreciselyOnce(oneC);
 
       if (!cancelled) {
-        setUpcoming(twoU);
-        setCompletedList(twoC);
+        // mover los que terminaron
+        const readyU = twoU.map(m => (m.status === "LIVE" && isMapFinal(m.rounds)) ? { ...m, status: "FINAL" } : m);
+        const stayUp = readyU.filter(m => m.status !== "FINAL");
+        const moved  = readyU.filter(m => m.status === "FINAL");
+
+        setUpcoming(stayUp);
+        setCompletedList(twoC.concat(moved));
       }
     }
 
     tick();
     const id = setInterval(tick, POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
+    return () => { cancelled = true; clearInterval(id); };
   }, []);
 
   return (
