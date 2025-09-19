@@ -40,13 +40,8 @@ function pickScore(match, i) {
 }
 
 function abbr(name = "") {
-  const up =
-    (name.normalize?.("NFD").replace(/[\u0300-\u036f]/g, "") || name)
-      .toUpperCase()
-      .trim();
-  if (/^[A-Z0-9]{2,4}$/.test(up)) return up;
-  const f = up.split(/\s+/)[0];
-  return f.length <= 4 ? f : f.slice(0, 3);
+  const tag = officialTag(name);
+  return tag || "—";
 }
 
 function tHM(d) {
@@ -123,6 +118,54 @@ function phaseFromEvent(e = "") {
   if (s.includes("semifinal")) return "SEMIFINALS";
   if (s.includes("final")) return "FINALS";
   return "MATCH";
+}
+
+// Tags oficiales comunes en Valorant
+const OFFICIAL_TAGS = new Map([
+  ["G2 ESPORTS", "G2"],
+  ["SENTINELS", "SEN"],
+  ["TEAM LIQUID", "TL"],
+  ["EDWARD GAMING", "EDG"], // también cubrimos “EDward”
+  ["EDWARD", "EDG"],
+  ["EDWARDGAMING", "EDG"],
+  ["DRX", "DRX"],
+  ["BILIBILI GAMING", "BLG"],
+  ["PAPER REX", "PRX"],
+  ["REX REGUM QEON", "RRQ"],
+  ["FNATIC", "FNC"],
+  ["GIANTX", "GX"],
+  ["MIBR", "MIBR"],
+  ["NRG", "NRG"],
+  ["LOUD", "LOUD"],
+  ["T1", "T1"],
+  ["GEN.G", "GEN"],
+  ["NATUS VINCERE", "NAVI"],
+  ["FUT ESPORTS", "FUT"],
+  ["DRAGON RANGER GAMING", "DRG"],
+  ["XI LAI GAMING", "XLG"],
+]);
+
+function officialTag(name = "") {
+  if (!name) return "";
+  const up = (name.normalize?.("NFD").replace(/[\u0300-\u036f]/g, "") || name)
+    .toUpperCase().trim();
+
+  // match exacto por clave conocida
+  if (OFFICIAL_TAGS.has(up)) return OFFICIAL_TAGS.get(up);
+
+  // normalizaciones frecuentes
+  if (/^EDWARD\s?GAMING|EDWARD$/i.test(name)) return "EDG";
+  if (/^TEAM\s+LIQUID$/i.test(name)) return "TL";
+  if (/^BILIBILI\s+GAMING$/i.test(name)) return "BLG";
+  if (/^DRAGON\s+RANGER\s+GAMING$/i.test(name)) return "DRG";
+  if (/^REX\s+REGUM\s+QEON$/i.test(name)) return "RRQ";
+  if (/^PAPER\s+REX$/i.test(name)) return "PRX";
+  if (/^XI\s+LAI\s+GAMING$/i.test(name)) return "XLG";
+
+  // fallback: toma las siglas de 1–3 palabras principales (ignora “Team”, “Gaming”, “Esports”)
+  const words = up.split(/\s+/).filter(w => !["TEAM", "GAMING", "ESPORTS", "CLUB"].includes(w));
+  const letters = words.slice(0, 3).map(w => w.replace(/[^A-Z0-9]/g, "").slice(0, 1)).join("");
+  return letters.length >= 2 && letters.length <= 4 ? letters : up.slice(0, 3);
 }
 
 /* ===== Rounds helpers (compactos) ===== */
@@ -218,6 +261,22 @@ function SeriesDiamonds({ wins = 0, bestOf = 3, side = "left" }) {
   );
 }
 
+/* ===== Helper evento junto a la serie ===== */
+function compactEventLabel(ev = "") {
+  const s = String(ev).trim();
+  if (!s) return "";
+  if (/valorant\s+champions\s+tour/i.test(s)) {
+    const y = (s.match(/\b(20\d{2})\b/) || [, ""])[1];
+    return `VCT${y ? " " + y : ""}`;
+  }
+  return s.length > 20 ? s.slice(0, 20) + "…" : s;
+}
+function compactSeriesLabel(series = "") {
+  const s = String(series).trim();
+  if (!s) return "";
+  return s.replace(/\s*:\s*/g, " · ").replace(/\s+/g, " ");
+}
+
 /* ===== Componente ===== */
 export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
   const [mounted, setMounted] = useState(false);
@@ -254,12 +313,13 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
     const tsNum = typeof match.startTs === "number" ? match.startTs : null;
     if (match.status === "LIVE")
       return tsNum ? `LIVE • ${diffHM(nowMs - tsNum)}` : "LIVE";
-    if (match.status === "UPCOMING")
-      return tsNum && tsNum > nowMs
-        ? `${tHM(new Date(tsNum))} • en ${diffHM(tsNum - nowMs)}`
-        : match.in || "UPCOMING";
+    if (match.status === "UPCOMING") {
+      if (tsNum && tsNum > nowMs) return `${diffHM(tsNum - nowMs)}`;
+      return match.in || "UPCOMING";
+    }
     return "FINAL";
   }, [mounted, now, match.status, match.startTs, match.in]);
+
 
   /* Rondas compactas (para score grande en LIVE) */
   const { t1ct, t1t, t2ct, t2t } = getRounds(match);
@@ -348,8 +408,23 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
               </div>
             )}
 
-            {/* Si no quieres mostrar torneo/mapa, deja vacía o elimina esta línea */}
-            {/* <div className="meta-line">{phaseFromEvent(match.event)} · {tierLabel(match.event)} {match.currentMap ? ` · ${match.currentMap.toUpperCase()}` : ""}</div> */}
+            {(match.event || match.seriesTitle) && (
+              <div
+                className="meta-line"
+                title={`${match.event || ""}${match.seriesTitle ? " • " + match.seriesTitle : ""}`}
+              >
+                {match.event && (
+                  <>
+                    <span className="meta-chip">{phaseFromEvent(match.event)}</span>
+                    <span className="meta-sep">•</span>
+                    <span className="meta-chip">{tierLabel(match.event)}</span>
+                  </>
+                )}
+                {match.seriesTitle && (
+                  <span className="meta-series">{match.seriesTitle}</span>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -362,9 +437,9 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
         {/* estado + CTA */}
         <div className="cta">
           <span className="cta__status" suppressHydrationWarning>{statusStr}</span>
-          {match.id && <Link href="#" className="cta__btn">More info</Link>}
+          {/*match.id && <Link href="#" className="cta__btn">More info</Link>*/}
         </div>
       </div>
-    </div>
+    </div >
   );
 }

@@ -137,9 +137,9 @@ const mapKeyOf = (seg) =>
 */
 function readProvided(seg = {}, team = 1) {
   const ct = Number(seg?.[`team_${team}_round_ct`]) || Number(seg?.[`team${team}_round_ct`]);
-  const t  = Number(seg?.[`team_${team}_round_t`])  || Number(seg?.[`team${team}_round_t`]);
+  const t = Number(seg?.[`team_${team}_round_t`]) || Number(seg?.[`team${team}_round_t`]);
   const hasCT = Number.isFinite(ct);
-  const hasT  = Number.isFinite(t);
+  const hasT = Number.isFinite(t);
   return {
     provided: hasCT ? ct : (hasT ? t : null),
     side: hasCT ? "CT" : (hasT ? "T" : null),
@@ -176,8 +176,8 @@ function mergeLiveRounds(prevRounds = null, seg = null, prevKey = "", prevMeta =
   const sameMap = key && prevKey && key === prevKey;
 
   // estado base
-  const baseRounds = sameMap && prevRounds ? { ...prevRounds } : { t1ct:0, t1t:0, t2ct:0, t2t:0 };
-  const baseMeta   = sameMap && prevMeta ? { ...prevMeta } : { start1:null, start2:null, _prov1:0, _prov2:0, _total:0 };
+  const baseRounds = sameMap && prevRounds ? { ...prevRounds } : { t1ct: 0, t1t: 0, t2ct: 0, t2t: 0 };
+  const baseMeta = sameMap && prevMeta ? { ...prevMeta } : { start1: null, start2: null, _prov1: 0, _prov2: 0, _total: 0 };
 
   // lecturas sesgadas (campo que SÍ crece en cada team)
   const r1 = readProvided(seg, 1);
@@ -192,7 +192,7 @@ function mergeLiveRounds(prevRounds = null, seg = null, prevKey = "", prevMeta =
 
   // totales
   const prevTotal = (baseMeta._prov1 || 0) + (baseMeta._prov2 || 0);
-  const curTotal  = prov1 + prov2;
+  const curTotal = prov1 + prov2;
 
   // snapshot regresivo → ignóralo
   if (sameMap && looksRegressive(prevTotal, curTotal)) {
@@ -207,12 +207,12 @@ function mergeLiveRounds(prevRounds = null, seg = null, prevKey = "", prevMeta =
   if (d1 > 0 && baseMeta.start1) {
     const dist = distributeByPattern(baseMeta.start1, prevTotal, d1);
     baseRounds.t1ct += dist.ct;
-    baseRounds.t1t  += dist.t;
+    baseRounds.t1t += dist.t;
   }
   if (d2 > 0 && baseMeta.start2) {
     const dist = distributeByPattern(baseMeta.start2, prevTotal, d2);
     baseRounds.t2ct += dist.ct;
-    baseRounds.t2t  += dist.t;
+    baseRounds.t2t += dist.t;
   }
 
   // actualizar meta
@@ -294,6 +294,10 @@ function hydrateWithSegmentsOnce(matches, segments) {
       vlrUrl: seg.match_page || m.vlrUrl,
       mapNumber: seg.map_number ?? m.mapNumber,
 
+      // NUEVO:
+      event: seg.match_event || m.event || null,
+      seriesTitle: seg.match_series || m.seriesTitle || null,
+
       _mapKey: merged.mapKey,
       _mapMeta: merged.meta,
       rounds,
@@ -374,7 +378,7 @@ export default function HomeMatches({ today, next, completed }) {
       status: "LIVE",
       startTs: Date.now() - 25 * 60 * 1000,
       event: "PLAYOFFS • VCT",
-
+      
       currentMap,
       mapImage: resolveMapImage(currentMap),
       in: null,
@@ -385,7 +389,7 @@ export default function HomeMatches({ today, next, completed }) {
 
       series: { bestOf: 3, wins1: 0, wins2: 1 },
 
-      teams: [{ name: "G2 Esports" }, { name: "SENTINELS" }],
+      teams: [{ name: "G2 Esports" }, { name: "Sentinels" }],
     };
   }, []);
 
@@ -429,7 +433,7 @@ export default function HomeMatches({ today, next, completed }) {
         // reclasificar finalizados
         const readyU = hyd2U.map(m => (m.status === "LIVE" && isMapFinal(m.rounds)) ? { ...m, status: "FINAL" } : m);
         const stayUp = readyU.filter(m => m.status !== "FINAL");
-        const moved  = readyU.filter(m => m.status === "FINAL");
+        const moved = readyU.filter(m => m.status === "FINAL");
         setUpcoming(stayUp);
         setCompletedList(hyd2C.concat(moved));
       }
@@ -462,7 +466,7 @@ export default function HomeMatches({ today, next, completed }) {
         // mover los que terminaron
         const readyU = twoU.map(m => (m.status === "LIVE" && isMapFinal(m.rounds)) ? { ...m, status: "FINAL" } : m);
         const stayUp = readyU.filter(m => m.status !== "FINAL");
-        const moved  = readyU.filter(m => m.status === "FINAL");
+        const moved = readyU.filter(m => m.status === "FINAL");
 
         setUpcoming(stayUp);
         setCompletedList(twoC.concat(moved));
