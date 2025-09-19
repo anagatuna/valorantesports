@@ -1103,8 +1103,8 @@ main {
 }
 
 .meta-line {
-  display: flex;
-  flex-wrap: wrap;
+  flex-basis: auto;   /* que solo ocupe lo que necesite */
+  white-space: nowrap; /* evita salto raro */
   justify-content: center;
   align-items: center;
   gap: 12px;

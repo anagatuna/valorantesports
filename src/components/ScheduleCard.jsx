@@ -1,3 +1,4 @@
+// src/components/ScheduleCard.jsx
 "use client";
 
 import Link from "next/link";
@@ -112,20 +113,20 @@ function tierLabel(eventName = "") {
 function phaseFromEvent(e = "") {
   const s = e.toLowerCase();
   if (s.includes("regular")) return "REGULAR SEASON";
-  if (s.includes("group")) return "GROUP STAGE";
+  if (s.includes("group")) return "Group Stage";
   if (s.includes("swiss")) return "SWISS STAGE";
   if (s.includes("playoff")) return "PLAYOFFS";
   if (s.includes("semifinal")) return "SEMIFINALS";
   if (s.includes("final")) return "FINALS";
-  return "MATCH";
+  return "Match";
 }
 
-// Tags oficiales comunes en Valorant
+// Tags oficiales comunes
 const OFFICIAL_TAGS = new Map([
   ["G2 ESPORTS", "G2"],
   ["SENTINELS", "SEN"],
   ["TEAM LIQUID", "TL"],
-  ["EDWARD GAMING", "EDG"], // también cubrimos “EDward”
+  ["EDWARD GAMING", "EDG"],
   ["EDWARD", "EDG"],
   ["EDWARDGAMING", "EDG"],
   ["DRX", "DRX"],
@@ -147,13 +148,8 @@ const OFFICIAL_TAGS = new Map([
 
 function officialTag(name = "") {
   if (!name) return "";
-  const up = (name.normalize?.("NFD").replace(/[\u0300-\u036f]/g, "") || name)
-    .toUpperCase().trim();
-
-  // match exacto por clave conocida
+  const up = (name.normalize?.("NFD").replace(/[\u0300-\u036f]/g, "") || name).toUpperCase().trim();
   if (OFFICIAL_TAGS.has(up)) return OFFICIAL_TAGS.get(up);
-
-  // normalizaciones frecuentes
   if (/^EDWARD\s?GAMING|EDWARD$/i.test(name)) return "EDG";
   if (/^TEAM\s+LIQUID$/i.test(name)) return "TL";
   if (/^BILIBILI\s+GAMING$/i.test(name)) return "BLG";
@@ -161,70 +157,9 @@ function officialTag(name = "") {
   if (/^REX\s+REGUM\s+QEON$/i.test(name)) return "RRQ";
   if (/^PAPER\s+REX$/i.test(name)) return "PRX";
   if (/^XI\s+LAI\s+GAMING$/i.test(name)) return "XLG";
-
-  // fallback: toma las siglas de 1–3 palabras principales (ignora “Team”, “Gaming”, “Esports”)
-  const words = up.split(/\s+/).filter(w => !["TEAM", "GAMING", "ESPORTS", "CLUB"].includes(w));
-  const letters = words.slice(0, 3).map(w => w.replace(/[^A-Z0-9]/g, "").slice(0, 1)).join("");
+  const words = up.split(/\s+/).filter((w) => !["TEAM", "GAMING", "ESPORTS", "CLUB"].includes(w));
+  const letters = words.slice(0, 3).map((w) => w.replace(/[^A-Z0-9]/g, "").slice(0, 1)).join("");
   return letters.length >= 2 && letters.length <= 4 ? letters : up.slice(0, 3);
-}
-
-/* ===== Rounds helpers (compactos) ===== */
-const toNum = (x) => {
-  const n = Number(x);
-  return Number.isFinite(n) ? n : null;
-};
-
-function getRounds(match) {
-  if (match?.rounds) {
-    const r = match.rounds;
-    return {
-      t1ct: toNum(r.t1ct),
-      t1t: toNum(r.t1t),
-      t2ct: toNum(r.t2ct),
-      t2t: toNum(r.t2t),
-    };
-  }
-  return {
-    t1ct: toNum(match?.team1_round_ct),
-    t1t: toNum(match?.team1_round_t),
-    t2ct: toNum(match?.team2_round_ct),
-    t2t: toNum(match?.team2_round_t),
-  };
-}
-
-/** Devuelve JSX coloreable para (CT/T) */
-function fmtRoundsCompact(ct, t) {
-  const hasCT = ct !== null && ct !== undefined;
-  const hasT = t !== null && t !== undefined;
-  if (!hasCT && !hasT) return null;
-
-  if (hasCT && hasT) {
-    return (
-      <span className="score__rnd">
-        <span className="par">(</span>
-        <span className="ct">{ct}</span>
-        <span className="sep">/</span>
-        <span className="t">{t}</span>
-        <span className="par">)</span>
-      </span>
-    );
-  }
-  if (hasCT) {
-    return (
-      <span className="score__rnd">
-        <span className="par">(</span>
-        <span className="ct">{ct}</span>
-        <span className="par"> CT)</span>
-      </span>
-    );
-  }
-  return (
-    <span className="score__rnd">
-      <span className="par">(</span>
-      <span className="t">{t}</span>
-      <span className="par"> T)</span>
-    </span>
-  );
 }
 
 /* ===== Series (diamantes) ===== */
@@ -246,7 +181,7 @@ function getBestOf(match, s1, s2) {
 
   const m1 = Number(match?.series?.wins1 ?? s1 ?? 0);
   const m2 = Number(match?.series?.wins2 ?? s2 ?? 0);
-  return Math.max(m1, m2) >= 3 ? 5 : 3; // heurística
+  return Math.max(m1, m2) >= 3 ? 5 : 3;
 }
 
 function SeriesDiamonds({ wins = 0, bestOf = 3, side = "left" }) {
@@ -261,16 +196,7 @@ function SeriesDiamonds({ wins = 0, bestOf = 3, side = "left" }) {
   );
 }
 
-/* ===== Helper evento junto a la serie ===== */
-function compactEventLabel(ev = "") {
-  const s = String(ev).trim();
-  if (!s) return "";
-  if (/valorant\s+champions\s+tour/i.test(s)) {
-    const y = (s.match(/\b(20\d{2})\b/) || [, ""])[1];
-    return `VCT${y ? " " + y : ""}`;
-  }
-  return s.length > 20 ? s.slice(0, 20) + "…" : s;
-}
+/* ===== Helper evento/serie ===== */
 function compactSeriesLabel(series = "") {
   const s = String(series).trim();
   if (!s) return "";
@@ -293,7 +219,7 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
   const wm1 = t1?.name ? findLogo(t1.name, logos, teamList) : null;
   const wm2 = t2?.name ? findLogo(t2.name, logos, teamList) : null;
 
-  // NO usar esto para rondas; es solo fallback de series cuando no está LIVE
+  // Series fallback cuando NO es LIVE
   const s1 = pickScore(match, 0);
   const s2 = pickScore(match, 1);
 
@@ -311,8 +237,7 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
     if (!mounted) return "";
     const nowMs = now ?? Date.now();
     const tsNum = typeof match.startTs === "number" ? match.startTs : null;
-    if (match.status === "LIVE")
-      return tsNum ? `LIVE • ${diffHM(nowMs - tsNum)}` : "LIVE";
+    if (match.status === "LIVE") return tsNum ? `LIVE • ${diffHM(nowMs - tsNum)}` : "LIVE";
     if (match.status === "UPCOMING") {
       if (tsNum && tsNum > nowMs) return `${diffHM(tsNum - nowMs)}`;
       return match.in || "UPCOMING";
@@ -320,23 +245,52 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
     return "FINAL";
   }, [mounted, now, match.status, match.startTs, match.in]);
 
+  /* ====== Split CT/T SIEMPRE desde match.rounds (estado propio) ====== */
+  const t1ct = Number(match?.rounds?.t1ct ?? 0);
+  const t1t = Number(match?.rounds?.t1t ?? 0);
+  const t2ct = Number(match?.rounds?.t2ct ?? 0);
+  const t2t = Number(match?.rounds?.t2t ?? 0);
 
-  /* Rondas compactas (para score grande en LIVE) */
-  const { t1ct, t1t, t2ct, t2t } = getRounds(match);
-  const rounds1 = (t1ct ?? 0) + (t1t ?? 0);
-  const rounds2 = (t2ct ?? 0) + (t2t ?? 0);
+  const rounds1 = t1ct + t1t;
+  const rounds2 = t2ct + t2t;
 
-  /* Series (diamantes) desde match.series */
+  // Solo mostrar split cuando el match está LIVE
+  const showSplit = isLive;
+
   const wins1 = match.series?.wins1 ?? 0;
   const wins2 = match.series?.wins2 ?? 0;
   const bestOf = match.series?.bestOf ?? getBestOf(match, s1, s2);
 
+  const seriesTitle = (
+    match.seriesTitle ||
+    match.match_series ||
+    match.series?.name ||
+    match.series_name ||
+    match.round_info ||
+    match.roundInfo ||
+    match.stage?.round ||
+    match.stage?.name ||
+    match.bracket?.round_name ||
+    match.bracket_round ||
+    match.group_round ||
+    match.group?.round ||
+    ""
+  ).toString().replace(/\s+/g, " ").trim();
+
+  const fmtRoundsCompact = (ct, t) => (
+    <span className="score__rnd">
+      <span className="par">(</span>
+      <span className="ct">{ct}</span>
+      <span className="sep">/</span>
+      <span className="t">{t}</span>
+      <span className="par">)</span>
+    </span>
+  );
+
   return (
     <div className={`sched ${isLive ? "is-live" : ""}`}>
-      {/* overlay global leve */}
       <div className="sched__overlay" />
 
-      {/* === FONDO: MAPA (cinta centrada) === */}
       {match.mapImage && (
         <div className="sched__bg" aria-hidden="true">
           <div className="sched__center">
@@ -352,7 +306,6 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
         </div>
       )}
 
-      {/* watermarks (logos equipos) */}
       {wm1 && (
         <div className="sched__wm sched__wm--left">
           <Image src={wm1} alt="" width={160} height={160} unoptimized className="sched__wm-img" />
@@ -366,13 +319,18 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
         </div>
       )}
 
-      {/* contenido */}
       <div className="sched__grid">
         {/* fecha / hora */}
         <div className="time">
-          <div className="time__date" suppressHydrationWarning>{dateStr || "—"}</div>
-          <div className="time__clock" suppressHydrationWarning>{timeStr || match.in || "—"}</div>
-          <div className="time__tz" suppressHydrationWarning>{tzStr}</div>
+          <div className="time__date" suppressHydrationWarning>
+            {dateStr || "—"}
+          </div>
+          <div className="time__clock" suppressHydrationWarning>
+            {timeStr || match.in || "—"}
+          </div>
+          <div className="time__tz" suppressHydrationWarning>
+            {tzStr}
+          </div>
         </div>
 
         {/* team 1 */}
@@ -384,22 +342,20 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
         {/* marcador */}
         <div className="scorebox">
           <div className="scorebox__content">
-            {/* fila principal */}
             <div className="scorebox__row">
               <span className="score score--left">
-                <span className="score__num">{isLive ? rounds1 : (s1 ?? "–")}</span>
-                {fmtRoundsCompact(t1ct, t1t)}
+                <span className="score__num">{isLive ? rounds1 : s1 ?? "–"}</span>
+                {showSplit ? fmtRoundsCompact(t1ct, t1t) : null}
               </span>
 
               <span className="vs">VS</span>
 
               <span className="score">
-                <span className="score__num">{isLive ? rounds2 : (s2 ?? "–")}</span>
-                {fmtRoundsCompact(t2ct, t2t)}
+                <span className="score__num">{isLive ? rounds2 : s2 ?? "–"}</span>
+                {showSplit ? fmtRoundsCompact(t2ct, t2t) : null}
               </span>
             </div>
 
-            {/* diamantes SOLO en LIVE */}
             {isLive && (
               <div className="series-row" aria-hidden="true">
                 <SeriesDiamonds wins={wins1} bestOf={bestOf} side="left" />
@@ -408,21 +364,11 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
               </div>
             )}
 
-            {(match.event || match.seriesTitle) && (
-              <div
-                className="meta-line"
-                title={`${match.event || ""}${match.seriesTitle ? " • " + match.seriesTitle : ""}`}
-              >
-                {match.event && (
-                  <>
-                    <span className="meta-chip">{phaseFromEvent(match.event)}</span>
-                    <span className="meta-sep">•</span>
-                    <span className="meta-chip">{tierLabel(match.event)}</span>
-                  </>
-                )}
-                {match.seriesTitle && (
-                  <span className="meta-series">{match.seriesTitle}</span>
-                )}
+            {(seriesTitle || match.event) && (
+              <div className="meta-line" title={`${seriesTitle || ""}${match.event ? " • " + match.event : ""}`}>
+                <span className="meta-chip meta-chip--series">{seriesTitle || phaseFromEvent(match.event)}</span>
+                <span className="meta-sep">·</span>
+                <span className="meta-chip meta-chip--tier">{tierLabel(match.event || seriesTitle || "")}</span>
               </div>
             )}
           </div>
@@ -436,10 +382,12 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
 
         {/* estado + CTA */}
         <div className="cta">
-          <span className="cta__status" suppressHydrationWarning>{statusStr}</span>
-          {/*match.id && <Link href="#" className="cta__btn">More info</Link>*/}
+          <span className="cta__status" suppressHydrationWarning>
+            {statusStr}
+          </span>
+          {/* {match.id && <Link href="#" className="cta__btn">More info</Link>} */}
         </div>
       </div>
-    </div >
+    </div>
   );
 }

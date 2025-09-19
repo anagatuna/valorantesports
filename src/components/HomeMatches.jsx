@@ -55,6 +55,31 @@ async function ensureLogosFor(matches) {
   return { logoMap, teamList: [] };
 }
 
+/* ================== Live cache (persiste entre reloads) ================== */
+const LIVE_CACHE_KEY = "vlr_live_rounds_v1";
+
+/** Lee todo el cache */
+function readLiveCache() {
+  try {
+    const raw = localStorage.getItem(LIVE_CACHE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+/** Escribe todo el cache */
+function writeLiveCache(obj) {
+  try {
+    localStorage.setItem(LIVE_CACHE_KEY, JSON.stringify(obj));
+  } catch { }
+}
+/** Clave estable por match + mapa */
+function liveCacheId(seg) {
+  const url = (seg?.match_page || "").trim();
+  const map = mapKeyOf(seg);
+  return url && map ? `${url}::${map}` : null;
+}
+
 /* ================== Matching/clean ================== */
 const clean = (s = "") =>
   s
@@ -75,7 +100,6 @@ function teamsRoughEqual(a = "", b = "") {
 /* ================== Feed helpers ================== */
 async function fetchLiveSegmentsFromProxy() {
   try {
-    // cache-buster para evitar respuestas viejas del proxy/CDN
     const r = await fetch(`/api/vlrgg/list?q=live_score&_=${Date.now()}`, { cache: "no-store" });
     if (!r.ok) return [];
     const j = await r.json();
@@ -97,16 +121,9 @@ const toInt = (x) => {
 
 function getSegSeries(seg = {}) {
   const wins1 =
-    toInt(seg.series_score1) ??
-    toInt(seg.maps1) ??
-    toInt(seg.series1) ??
-    toInt(seg.score1);
-
+    toInt(seg.series_score1) ?? toInt(seg.maps1) ?? toInt(seg.series1) ?? toInt(seg.score1);
   const wins2 =
-    toInt(seg.series_score2) ??
-    toInt(seg.maps2) ??
-    toInt(seg.series2) ??
-    toInt(seg.score2);
+    toInt(seg.series_score2) ?? toInt(seg.maps2) ?? toInt(seg.series2) ?? toInt(seg.score2);
 
   const bestOf =
     toInt(seg.best_of) ??
@@ -126,104 +143,173 @@ const mapKeyOf = (seg) =>
     .replace(/\s+/g, "")
     .trim();
 
-/* ================== Reconstrucción CT/T con OT ==================
-   El feed solo incrementa el lado con el que arrancó cada team y deja "N/A" el otro.
-   Reconstruimos CT/T:
-   - Rondas 0–11  (total<12):  sumamos al lado inicial.
-   - Rondas 12–23 (12<=total<24): sumamos al lado opuesto.
-   - Overtime (total>=24): alterna CADA RONDA (set de 2: cada team juega 1 CT y 1 T).
-   Nota: No conocemos el orden exacto de victorias dentro del intervalo, así que asignamos
-   los 'wins' del team siguiendo el patrón de lados desde el índice de ronda actual.
-*/
+/* ================== Reconstrucción CT/T con OT ================== */
 function readProvided(seg = {}, team = 1) {
   const ct = Number(seg?.[`team_${team}_round_ct`]) || Number(seg?.[`team${team}_round_ct`]);
   const t = Number(seg?.[`team_${team}_round_t`]) || Number(seg?.[`team${team}_round_t`]);
   const hasCT = Number.isFinite(ct);
   const hasT = Number.isFinite(t);
   return {
-    provided: hasCT ? ct : (hasT ? t : null),
-    side: hasCT ? "CT" : (hasT ? "T" : null),
+    provided: hasCT ? ct : hasT ? t : null,
+    side: hasCT ? "CT" : hasT ? "T" : null,
   };
 }
-function opposite(side) { return side === "CT" ? "T" : side === "T" ? "CT" : null; }
-
-/** lado que juega un team en la ronda (0-based) dadas sus sides iniciales */
+function opposite(side) {
+  return side === "CT" ? "T" : side === "T" ? "CT" : null;
+}
 function sideForRound(startSide, roundIndex) {
   if (!startSide) return null;
-  if (roundIndex < 12) return startSide;                // primera mitad
-  if (roundIndex < 24) return opposite(startSide);      // segunda mitad
-  // OT: alterna cada ronda a partir de la 24 (r=24 → cambia respecto a 2ª mitad)
-  return ((roundIndex - 24) % 2 === 0) ? opposite(startSide) : startSide;
+  if (roundIndex < 12) return startSide;
+  if (roundIndex < 24) return opposite(startSide);
+  return (roundIndex - 24) % 2 === 0 ? opposite(startSide) : startSide;
 }
-
-/** reparte 'wins' de un team a CT/T siguiendo el patrón de lados desde 'fromRound' */
 function distributeByPattern(startSide, fromRound, wins) {
-  let ct = 0, t = 0;
+  let ct = 0,
+    t = 0;
   for (let i = 0; i < wins; i++) {
     const side = sideForRound(startSide, fromRound + i);
-    if (side === "CT") ct++; else if (side === "T") t++;
+    if (side === "CT") ct++;
+    else if (side === "T") t++;
   }
   return { ct, t };
 }
 
-/** Anti-regresión: si el snapshot tiene MUCHAS menos rondas que antes, ignorar */
+/** Anti-regresión: si el snapshot tiene menos rondas que antes, ignorar (tolerancia 1) */
 function looksRegressive(prevTotals, curTotals) {
-  return curTotals + 2 <= prevTotals; // tolerancia 2
+  return curTotals + 1 <= prevTotals;
 }
 
 function mergeLiveRounds(prevRounds = null, seg = null, prevKey = "", prevMeta = {}) {
   const key = mapKeyOf(seg);
   const sameMap = key && prevKey && key === prevKey;
 
-  // estado base
-  const baseRounds = sameMap && prevRounds ? { ...prevRounds } : { t1ct: 0, t1t: 0, t2ct: 0, t2t: 0 };
-  const baseMeta = sameMap && prevMeta ? { ...prevMeta } : { start1: null, start2: null, _prov1: 0, _prov2: 0, _total: 0 };
+  const cache = readLiveCache();
+  const cid = liveCacheId(seg);
+  const cached = cid ? cache[cid] : null;
 
-  // lecturas sesgadas (campo que SÍ crece en cada team)
+  const baseRounds =
+    sameMap && prevRounds
+      ? { ...prevRounds }
+      : cached?.rounds
+        ? { ...cached.rounds }
+        : { t1ct: 0, t1t: 0, t2ct: 0, t2t: 0 };
+
+  const baseMeta =
+    sameMap && prevMeta
+      ? { ...prevMeta }
+      : cached?.meta
+        ? { ...cached.meta }
+        : { start1: null, start2: null, _prov1: 0, _prov2: 0, _total: 0, lastStableTotal: 0, _wins1: 0, _wins2: 0, mapWin: false };
+
+  // --- lecturas sesgadas por lado ---
   const r1 = readProvided(seg, 1);
   const r2 = readProvided(seg, 2);
 
-  // inicializar lados de arranque si aún no los conocemos
   if (!baseMeta.start1 && r1.side) baseMeta.start1 = r1.side;
   if (!baseMeta.start2 && r2.side) baseMeta.start2 = r2.side;
 
   const prov1 = Number.isFinite(r1.provided) ? r1.provided : baseMeta._prov1;
   const prov2 = Number.isFinite(r2.provided) ? r2.provided : baseMeta._prov2;
 
-  // totales
   const prevTotal = (baseMeta._prov1 || 0) + (baseMeta._prov2 || 0);
   const curTotal = prov1 + prov2;
 
-  // snapshot regresivo → ignóralo
+  // anti-regresión
   if (sameMap && looksRegressive(prevTotal, curTotal)) {
     return { rounds: baseRounds, mapKey: prevKey, meta: baseMeta };
   }
 
-  // deltas (crecimientos)
+  baseMeta.lastStableTotal = Math.max(baseMeta.lastStableTotal || 0, curTotal);
+
+  // --- deltas de rondas (feed parcial) ---
   const d1 = Math.max(0, prov1 - (baseMeta._prov1 || 0));
   const d2 = Math.max(0, prov2 - (baseMeta._prov2 || 0));
 
-  // distribuir por patrón (incluye OT alternando por ronda)
-  if (d1 > 0 && baseMeta.start1) {
-    const dist = distributeByPattern(baseMeta.start1, prevTotal, d1);
-    baseRounds.t1ct += dist.ct;
-    baseRounds.t1t += dist.t;
-  }
-  if (d2 > 0 && baseMeta.start2) {
-    const dist = distributeByPattern(baseMeta.start2, prevTotal, d2);
-    baseRounds.t2ct += dist.ct;
-    baseRounds.t2t += dist.t;
+  const hasHistory = (baseMeta._total || 0) > 0 || cached;
+  if ((d1 > 0 || d2 > 0) && baseMeta.start1 && baseMeta.start2) {
+    if (d1 > 0) {
+      const dist = distributeByPattern(baseMeta.start1, prevTotal, d1);
+      baseRounds.t1ct += dist.ct; baseRounds.t1t += dist.t;
+    }
+    if (d2 > 0) {
+      const dist = distributeByPattern(baseMeta.start2, prevTotal, d2);
+      baseRounds.t2ct += dist.ct; baseRounds.t2t += dist.t;
+    }
   }
 
-  // actualizar meta
+  // --- NUEVO: detectar fin de mapa por diamantes (wins de serie) ---
+  const s = getSegSeries(seg) || { wins1: 0, wins2: 0, bestOf: null };
+  const curW1 = Number(s.wins1 || 0);
+  const curW2 = Number(s.wins2 || 0);
+  const prevW1 = Number(baseMeta._wins1 || 0);
+  const prevW2 = Number(baseMeta._wins2 || 0);
+
+  const total1 = baseRounds.t1ct + baseRounds.t1t;
+  const total2 = baseRounds.t2ct + baseRounds.t2t;
+
+  // si aumentó el win de algún equipo y aún no llegamos a 13 (tiempo regular),
+  // “snap” a 13 de forma determinista siguiendo el patrón del último tramo
+  if (curW1 > prevW1 || curW2 > prevW2) {
+    const winner = curW1 > prevW1 ? 1 : 2;
+    const totalWinner = winner === 1 ? total1 : total2;
+
+    // Solo aplicamos snap si no estamos ya en 13/OT
+    if (totalWinner < 13) {
+      const missing = 13 - totalWinner; // 1 en la mayoría de los casos
+      const startSide = winner === 1 ? baseMeta.start1 : baseMeta.start2;
+      const dist = distributeByPattern(startSide, prevTotal + d1 + d2, missing);
+
+      if (winner === 1) {
+        baseRounds.t1ct += dist.ct; baseRounds.t1t += dist.t;
+      } else {
+        baseRounds.t2ct += dist.ct; baseRounds.t2t += dist.t;
+      }
+    }
+
+    // marca el fin de mapa por diamantes (aunque el feed no haya dado la última ronda)
+    baseMeta.mapWin = true;
+  }
+
   const meta = {
     ...baseMeta,
     _prov1: prov1,
     _prov2: prov2,
     _total: curTotal,
+    _wins1: curW1,
+    _wins2: curW2,
   };
 
+  if (cid) {
+    cache[cid] = { rounds: baseRounds, meta, ts: Date.now() };
+    writeLiveCache(cache);
+  }
+
   return { rounds: baseRounds, mapKey: key, meta };
+}
+
+// ⬇️ Pega estas funciones arriba (junto a otros helpers)
+function inferSeriesTitleFromItem(m = {}) {
+  const cand =
+    m.seriesTitle ||
+    m.match_series ||
+    m.series_name ||
+    m.round_info ||
+    m.roundInfo ||
+    m.stage?.round ||
+    m.stage?.name ||
+    m.bracket?.round_name ||
+    m.bracket_round ||
+    m.group_round ||
+    m.group?.round ||
+    m.event_phase ||
+    null;
+  return cand ? String(cand).replace(/\s+/g, " ").trim() : null;
+}
+
+function decorateWithLocalMapAndSeries(m) {
+  const base = decorateWithLocalMap(m);
+  const ser = inferSeriesTitleFromItem(base);
+  return ser ? { ...base, seriesTitle: ser } : base;
 }
 
 /* ================== Decoradores de mapa ================== */
@@ -247,10 +333,93 @@ function decorateWithLocalMap(m) {
   return name ? { ...m, currentMap: name, mapImage: resolveMapImage(name) } : m;
 }
 
+/* ================== Clasificación a Completed ================== */
+function isMapFinal(r) {
+  const a = (r?.t1ct || 0) + (r?.t1t || 0);
+  const b = (r?.t2ct || 0) + (r?.t2t || 0);
+  const mx = Math.max(a, b),
+    mn = Math.min(a, b);
+  return (mx >= 13 && mx - mn >= 2) || mx >= 14;
+}
+
+/* ================== Serie helpers ================== */
+function seriesTargetWins(bestOf) {
+  return Math.ceil((Number(bestOf) || 3) / 2);
+}
+function isSeriesOver(m) {
+  const bo = Number(m?.series?.bestOf || 3);
+  const tw = seriesTargetWins(bo);
+  return Number(m?.series?.wins1 || 0) >= tw || Number(m?.series?.wins2 || 0) >= tw;
+}
+
+/* ================== Post-Final → siguiente mapa / completed ================== */
+const FINAL_COOLDOWN_MS = 180_000; // 3 min
+
+function markFinalMeta(m) {
+  const meta = { ...(m._mapMeta || {}) };
+  meta.finalTs = Date.now();
+  return { ...m, _mapMeta: meta };
+}
+
+function shouldResetForNextMap(m, seg) {
+  const meta = m?._mapMeta || {};
+  if (!meta.finalTs) return false;
+  const cooled = Date.now() - meta.finalTs >= FINAL_COOLDOWN_MS;
+
+  const segMap = getSegMapName(seg);
+  const changedMap = segMap && segMap !== m.currentMap;
+
+  const p1 =
+    Number(seg?.team_1_round_ct || seg?.team1_round_ct || seg?.team_1_round_t || seg?.team1_round_t || 0) || 0;
+  const p2 =
+    Number(seg?.team_2_round_ct || seg?.team2_round_ct || seg?.team_2_round_t || seg?.team2_round_t || 0) || 0;
+  const looksReset = p1 + p2 === 0;
+
+  return cooled && (changedMap || looksReset);
+}
+
+function resetMapState(m, seg) {
+  const segMap = getSegMapName(seg);
+  const newKey = mapKeyOf({ map: segMap });
+  const start1 = m?._mapMeta?.start1 || null;
+  const start2 = m?._mapMeta?.start2 || null;
+
+  const freshMeta = { start1, start2, _prov1: 0, _prov2: 0, _total: 0, lastStableTotal: 0 };
+  const freshRounds = { t1ct: 0, t1t: 0, t2ct: 0, t2t: 0 };
+
+  return {
+    ...m,
+    status: "LIVE",
+    currentMap: segMap || m.currentMap || null,
+    mapImage: segMap ? resolveMapImage(segMap) : m.mapImage || null,
+    _mapKey: newKey || m._mapKey,
+    _mapMeta: freshMeta,
+    rounds: freshRounds,
+  };
+}
+
 /* ================== Hidrataciones ================== */
-/** Promueve a LIVE si el segmento lo marca + actualiza currentMap + RONDAS acumuladas + SERIES */
+function getSegSeriesSafe(seg, m) {
+  const s = getSegSeries(seg);
+  return {
+    bestOf: s.bestOf ?? m.series?.bestOf ?? null,
+    wins1: s.wins1 ?? m.series?.wins1 ?? 0,
+    wins2: s.wins2 ?? m.series?.wins2 ?? 0,
+  };
+}
+
+/** Promueve a LIVE + CT/T acumulado + SERIES */
 function hydrateWithSegmentsOnce(matches, segments) {
   if (!segments?.length) return matches;
+
+  // ⚠️ Agrega estos helpers cerca de los otros:
+  const isTBD = (s = "") => !s || /^tbd$/i.test(String(s).trim());
+  const parseUnixTs = (s = "") => {
+    // "2025-09-20 13:00:00" -> Date ms (asume UTC)
+    const iso = String(s).replace(" ", "T") + "Z";
+    const t = Date.parse(iso);
+    return Number.isFinite(t) ? t : null;
+  };
 
   const prepared = segments.map((seg) => ({
     raw: seg,
@@ -266,25 +435,48 @@ function hydrateWithSegmentsOnce(matches, segments) {
     const tm1 = clean(m.teams[0]?.name || "");
     const tm2 = clean(m.teams[1]?.name || "");
 
-    const hit = prepared.find(
-      (seg) =>
-        seg.t1 &&
-        seg.t2 &&
-        ((seg.t1 === tm1 && seg.t2 === tm2) ||
+    const hasUrl = !!m.vlrUrl;
+    const hit = prepared.find((seg) => {
+      // 1) si ya tenemos url, empata directo
+      if (hasUrl && seg.url && seg.url === (m.vlrUrl || "").trim()) return true;
+
+      // 2) emparejar por equipos (ambos conocidos)
+      const bothKnown =
+        !isTBD(seg.t1) && !isTBD(seg.t2) && tm1 && tm2;
+      if (bothKnown) {
+        if (
+          (seg.t1 === tm1 && seg.t2 === tm2) ||
           (seg.t1 === tm2 && seg.t2 === tm1) ||
           (teamsRoughEqual(seg.t1, tm1) && teamsRoughEqual(seg.t2, tm2)) ||
-          (teamsRoughEqual(seg.t1, tm2) && teamsRoughEqual(seg.t2, tm1)))
-    );
+          (teamsRoughEqual(seg.t1, tm2) && teamsRoughEqual(seg.t2, tm1))
+        ) return true;
+      }
+
+      // 3) fallback cuando hay TBD: pide al menos 1 equipo que coincida + cercanía de hora
+      const oneMatches =
+        (!!tm1 && teamsRoughEqual(seg.t1, tm1)) ||
+        (!!tm1 && teamsRoughEqual(seg.t2, tm1)) ||
+        (!!tm2 && teamsRoughEqual(seg.t1, tm2)) ||
+        (!!tm2 && teamsRoughEqual(seg.t2, tm2));
+
+      if (oneMatches) {
+        const segTs = parseUnixTs(seg.raw?.unix_timestamp);
+        const mTs = typeof m.startTs === "number" ? m.startTs : null;
+        // tolerancia 15 minutos + mismo evento si está
+        if (segTs && mTs && Math.abs(segTs - mTs) <= 15 * 60 * 1000) return true;
+      }
+      return false;
+    });
 
     if (!hit) return m;
 
     const seg = hit.raw;
-    const nextStatus = hit.isLiveSeg ? "LIVE" : m.status || "UPCOMING";
+    const nextStatus = hit.isLiveSeg ? "LIVE" : (m.status || "UPCOMING");
     const segMap = getSegMapName(seg);
 
     const merged = mergeLiveRounds(m.rounds, seg, m._mapKey, m._mapMeta);
     const rounds = merged.rounds;
-    const series = getSegSeries(seg);
+    const series = getSegSeriesSafe(seg, m);
 
     return {
       ...m,
@@ -293,33 +485,21 @@ function hydrateWithSegmentsOnce(matches, segments) {
       mapImage: segMap ? resolveMapImage(segMap) : m.mapImage || null,
       vlrUrl: seg.match_page || m.vlrUrl,
       mapNumber: seg.map_number ?? m.mapNumber,
-
-      // NUEVO:
       event: seg.match_event || m.event || null,
       seriesTitle: seg.match_series || m.seriesTitle || null,
-
       _mapKey: merged.mapKey,
       _mapMeta: merged.meta,
       rounds,
-
-      series: {
-        bestOf: series.bestOf ?? m.series?.bestOf ?? null,
-        wins1: series.wins1 ?? m.series?.wins1 ?? 0,
-        wins2: series.wins2 ?? m.series?.wins2 ?? 0,
-      },
-
+      series,
       teams: [{ ...(m.teams?.[0] || {}) }, { ...(m.teams?.[1] || {}) }],
     };
   });
 }
 
-/** Revalida usando la foto más nueva del mismo endpoint */
+/** Precisión (mismo endpoint) */
 async function hydratePreciselyOnce(matches) {
   const segs = await fetchLiveSegmentsFromProxy();
-  const prepared = segs.map((seg) => ({
-    raw: seg,
-    url: (seg?.match_page || "").trim(),
-  }));
+  const prepared = segs.map((seg) => ({ raw: seg, url: (seg?.match_page || "").trim() }));
 
   const updated = matches.map((m) => {
     const isLive = String(m?.status || "").toUpperCase() === "LIVE";
@@ -330,7 +510,6 @@ async function hydratePreciselyOnce(matches) {
 
     const seg = hit.raw;
     const segMap = getSegMapName(seg);
-
     const merged = mergeLiveRounds(m.rounds, seg, m._mapKey, m._mapMeta);
 
     let next = { ...m, _mapKey: merged.mapKey, _mapMeta: merged.meta, rounds: merged.rounds };
@@ -340,27 +519,11 @@ async function hydratePreciselyOnce(matches) {
       next.mapImage = resolveMapImage(segMap);
     }
 
-    const series = getSegSeries(seg);
-    if (series) {
-      next.series = {
-        bestOf: series.bestOf ?? next.series?.bestOf ?? null,
-        wins1: series.wins1 ?? next.series?.wins1 ?? 0,
-        wins2: series.wins2 ?? next.series?.wins2 ?? 0,
-      };
-    }
+    next.series = getSegSeriesSafe(seg, next);
     return next;
   });
 
   return updated;
-}
-
-/* ================== Clasificación a Completed ================== */
-function isMapFinal(r) {
-  const a = (r?.t1ct || 0) + (r?.t1t || 0);
-  const b = (r?.t2ct || 0) + (r?.t2t || 0);
-  const mx = Math.max(a, b), mn = Math.min(a, b);
-  // Regla práctica: 13 con diferencia 2 (tiempo regular) o >=14 (OT)
-  return (mx >= 13 && mx - mn >= 2) || mx >= 14;
 }
 
 /* ================== Componente ================== */
@@ -370,7 +533,7 @@ export default function HomeMatches({ today, next, completed }) {
   const [logoMap, setLogoMap] = useState({});
   const [teamList, setTeamList] = useState([]);
 
-  // Demo LIVE
+  // Demo LIVE (puedes quitarlo si no lo quieres)
   const demoLiveMatch = useMemo(() => {
     const currentMap = "icebox";
     return {
@@ -378,40 +541,38 @@ export default function HomeMatches({ today, next, completed }) {
       status: "LIVE",
       startTs: Date.now() - 25 * 60 * 1000,
       event: "PLAYOFFS • VCT",
-      
       currentMap,
       mapImage: resolveMapImage(currentMap),
       in: null,
-
       rounds: { t1ct: 4, t1t: 6, t2ct: 8, t2t: 4 },
       _mapKey: "icebox",
-      _mapMeta: { start1: "CT", start2: "T", _prov1: 10, _prov2: 12, _total: 22 },
-
+      _mapMeta: { start1: "CT", start2: "T", _prov1: 10, _prov2: 12, _total: 22, lastStableTotal: 22 },
       series: { bestOf: 3, wins1: 0, wins2: 1 },
-
       teams: [{ name: "G2 Esports" }, { name: "Sentinels" }],
     };
   }, []);
 
-  // Base lists (del feed server)
   const baseUpcoming = useMemo(() => {
     const a = today?.items || [];
     const b = next?.items || [];
-    return [demoLiveMatch, ...a, ...b].slice(0, 8).map(decorateWithLocalMap);
+    return [demoLiveMatch, ...a, ...b].slice(0, 8).map(decorateWithLocalMapAndSeries);
   }, [today, next, demoLiveMatch]);
 
   const baseCompleted = useMemo(
-    () => (completed?.items || []).slice(0, 8).map(decorateWithLocalMap),
+    () => (completed?.items || []).slice(0, 8).map(decorateWithLocalMapAndSeries),
     [completed]
   );
 
-  // Estado + refs para evitar stale-closure en polling
   const [upcoming, setUpcoming] = useState(baseUpcoming);
   const [completedList, setCompletedList] = useState(baseCompleted);
   const upRef = useRef(upcoming);
   const compRef = useRef(completedList);
-  useEffect(() => { upRef.current = upcoming; }, [upcoming]);
-  useEffect(() => { compRef.current = completedList; }, [completedList]);
+  useEffect(() => {
+    upRef.current = upcoming;
+  }, [upcoming]);
+  useEffect(() => {
+    compRef.current = completedList;
+  }, [completedList]);
 
   // Primera hidratación + logos
   useEffect(() => {
@@ -429,23 +590,47 @@ export default function HomeMatches({ today, next, completed }) {
 
       const hyd2U = await hydratePreciselyOnce(hyd1U);
       const hyd2C = await hydratePreciselyOnce(hyd1C);
-      if (!cancelled) {
-        // reclasificar finalizados
-        const readyU = hyd2U.map(m => (m.status === "LIVE" && isMapFinal(m.rounds)) ? { ...m, status: "FINAL" } : m);
-        const stayUp = readyU.filter(m => m.status !== "FINAL");
-        const moved = readyU.filter(m => m.status === "FINAL");
-        setUpcoming(stayUp);
-        setCompletedList(hyd2C.concat(moved));
-      }
+      if (cancelled) return;
 
-      const visible = [...hyd2U, ...hyd2C];
+      // marcar finalizados
+      const readyU = hyd2U.map((m) =>
+        m.status === "LIVE" && (isMapFinal(m.rounds) || m?._mapMeta?.mapWin)
+          ? { ...markFinalMeta(m), status: "FINAL" }
+          : m
+      );
+
+      // transición post-final → siguiente mapa o completed (inicial)
+      const segsNow = await fetchLiveSegmentsFromProxy();
+      const findSegFor = (m) =>
+        segsNow.find((s) => (s?.match_page || "").trim() === (m?.vlrUrl || "").trim());
+
+      const transitionedU = readyU.map((m) => {
+        if (m.status === "FINAL") {
+          if (isSeriesOver(m)) return m; // se mandará a completed abajo
+          const seg = findSegFor(m);
+          if (seg && shouldResetForNextMap(m, seg)) {
+            return resetMapState(m, seg);
+          }
+        }
+        return m;
+      });
+
+      const stayUp = transitionedU.filter((m) => !(m.status === "FINAL" && isSeriesOver(m)));
+      const moved = transitionedU.filter((m) => m.status === "FINAL" && isSeriesOver(m));
+
+      setUpcoming(stayUp);
+      setCompletedList(hyd2C.concat(moved));
+
+      const visible = [...stayUp, ...hyd2C];
       const cache = await ensureLogosFor(visible);
       if (!cancelled) {
         setLogoMap(cache?.logoMap || {});
         setTeamList(cache?.teamList || []);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [baseUpcoming, baseCompleted]);
 
   // Polling
@@ -461,21 +646,41 @@ export default function HomeMatches({ today, next, completed }) {
 
       const twoU = await hydratePreciselyOnce(oneU);
       const twoC = await hydratePreciselyOnce(oneC);
+      if (cancelled) return;
 
-      if (!cancelled) {
-        // mover los que terminaron
-        const readyU = twoU.map(m => (m.status === "LIVE" && isMapFinal(m.rounds)) ? { ...m, status: "FINAL" } : m);
-        const stayUp = readyU.filter(m => m.status !== "FINAL");
-        const moved = readyU.filter(m => m.status === "FINAL");
+      // transición post-final → siguiente mapa o completed
+      const findSegFor = (m) => segs.find((s) => (s?.match_page || "").trim() === (m?.vlrUrl || "").trim());
 
-        setUpcoming(stayUp);
-        setCompletedList(twoC.concat(moved));
-      }
+      const transitionedU_pre = twoU.map((m) =>
+        m.status === "LIVE" && (isMapFinal(m.rounds) || m?._mapMeta?.mapWin)
+          ? { ...markFinalMeta(m), status: "FINAL" }
+          : m
+      );
+
+      const transitionedU = transitionedU_pre.map((m) => {
+        if (m.status === "FINAL") {
+          if (isSeriesOver(m)) return m;
+          const seg = findSegFor(m);
+          if (seg && shouldResetForNextMap(m, seg)) {
+            return resetMapState(m, seg);
+          }
+        }
+        return m;
+      });
+
+      const stayUp = transitionedU.filter((m) => !(m.status === "FINAL" && isSeriesOver(m)));
+      const moved = transitionedU.filter((m) => m.status === "FINAL" && isSeriesOver(m));
+
+      setUpcoming(stayUp);
+      setCompletedList(twoC.concat(moved));
     }
 
     tick();
     const id = setInterval(tick, POLL_MS);
-    return () => { cancelled = true; clearInterval(id); };
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, []);
 
   return (
