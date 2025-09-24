@@ -548,7 +548,7 @@ export default function HomeMatches({ today, next, completed }) {
       _mapKey: "icebox",
       _mapMeta: { start1: "CT", start2: "T", _prov1: 10, _prov2: 12, _total: 22, lastStableTotal: 22 },
       series: { bestOf: 3, wins1: 0, wins2: 1 },
-      teams: [{ name: "G2 Esports" }, { name: "Sentinels" }],
+      teams: [{ name: "sentinels" }, { name: "Sentinels" }],
     };
   }, []);
 

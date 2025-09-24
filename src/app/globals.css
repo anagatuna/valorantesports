@@ -822,7 +822,7 @@ main {
   grid-template-columns: 140px 1fr minmax(420px, 640px) 1fr 140px; 
   gap: 20px;
   width: 100%;
-  padding: 0 20px; /* un pelín más de padding */
+  padding: 0 18px; /* un pelín más de padding */
   transition: all 0.3s ease; /* Para que el contenido también fluya */
 }
 
@@ -912,12 +912,16 @@ main {
   align-items: baseline;
   gap: 6px;
   white-space: nowrap;
-  width: auto !important;
-  min-width: 0;
+  width: 90px; /* Un ancho fijo que acomode cualquier puntaje */
+  justify-content: flex-end; 
 }
 
 .score--left {
   flex-direction: row-reverse;
+}
+
+.score--right {
+  justify-content: flex-start; 
 }
 
 .score--left .score__rnd {
@@ -1081,12 +1085,15 @@ main {
 .cta {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 16px;
-  /* antes 6px, más separación vertical */
-  padding-right: var(--grid-pad-x);
-  margin-top: 4px;
-  /* levanta un poco todo respecto al nombre del team */
+  /* Clave de la solución: Centrar en ambos ejes */
+  justify-content: center; /* Centrado vertical */
+  align-items: center;     /* Centrado horizontal */
+
+  /* Asegura que ocupe todo el espacio de la celda del grid */
+  height: 100%; 
+  /* Eliminamos el padding que lo desfasaba */
+  padding-right: 0; 
+  margin-top: 0; /* Opcional, para un centrado vertical perfecto */
 }
 
 .cta__status {
@@ -1276,4 +1283,35 @@ main {
   mask-position: center;
   -webkit-mask-size: cover;
   mask-size: cover;
+}
+
+/* NADA MAS QUIERO QUE SE VEA SIMETRICO*/
+/* ===== ALINEACIÓN PRECISA PARA LA REJILLA DE PARTIDOS ===== */
+
+/* Por defecto, centramos los elementos en sus columnas */
+.sched__grid > * {
+  justify-self: center;
+}
+
+/* 1. Equipo Izquierdo: lo alineamos al INICIO de su columna */
+.sched__grid > .team--left {
+  justify-self: start;
+}
+
+/* 2. Equipo Derecho: lo alineamos al FINAL de su columna */
+.sched__grid > .team--right {
+  justify-self: end;
+  text-align: right; /* Asegura que el texto interno también se alinee a la derecha */
+}
+
+/* 3. El CTA (LIVE / Contador) lo centramos explícitamente */
+/* Esto sobreescribe cualquier estilo previo de .cta */
+.sched__grid > .cta {
+  justify-self: center;
+  /* Reseteamos estilos que causaban el desbalance */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-right: 0;
+  height: 100%;
 }
