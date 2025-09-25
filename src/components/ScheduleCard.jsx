@@ -288,7 +288,7 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
   );
 
   return (
-    <div className={`sched ${isLive ? "is-live" : ""}`}>
+    <div className={`sched sched--glass ${isLive ? "is-live" : ""}`}>
       <div className="sched__overlay" />
 
       {match.mapImage && (
