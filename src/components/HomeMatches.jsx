@@ -211,8 +211,6 @@ function mergeLiveRounds(prevRounds = null, seg = null, prevKey = "", prevMeta =
           mapWin: false,
         };
 
-
-  // --- lecturas sesgadas por lado ---
   const r1 = readProvided(seg, 1);
   const r2 = readProvided(seg, 2);
 
@@ -225,18 +223,15 @@ function mergeLiveRounds(prevRounds = null, seg = null, prevKey = "", prevMeta =
   const prevTotal = (baseMeta._prov1 || 0) + (baseMeta._prov2 || 0);
   const curTotal = prov1 + prov2;
 
-  // anti-regresión
   if (sameMap && looksRegressive(prevTotal, curTotal)) {
     return { rounds: baseRounds, mapKey: prevKey, meta: baseMeta };
   }
 
   baseMeta.lastStableTotal = Math.max(baseMeta.lastStableTotal || 0, curTotal);
 
-  // --- deltas de rondas (feed parcial) ---
   const d1 = Math.max(0, prov1 - (baseMeta._prov1 || 0));
   const d2 = Math.max(0, prov2 - (baseMeta._prov2 || 0));
 
-  const hasHistory = (baseMeta._total || 0) > 0 || cached;
   if ((d1 > 0 || d2 > 0) && baseMeta.start1 && baseMeta.start2) {
     if (d1 > 0) {
       const dist = distributeByPattern(baseMeta.start1, prevTotal, d1);
@@ -248,7 +243,7 @@ function mergeLiveRounds(prevRounds = null, seg = null, prevKey = "", prevMeta =
     }
   }
 
-  // --- NUEVO: detectar fin de mapa por diamantes (wins de serie) ---
+  // wins/diamantes del feed
   const s = getSegSeries(seg) || { wins1: 0, wins2: 0, bestOf: null };
   const curW1 = Number(s.wins1 || 0);
   const curW2 = Number(s.wins2 || 0);
@@ -258,31 +253,23 @@ function mergeLiveRounds(prevRounds = null, seg = null, prevKey = "", prevMeta =
   const total1 = baseRounds.t1ct + baseRounds.t1t;
   const total2 = baseRounds.t2ct + baseRounds.t2t;
 
-  // si aumentó el win de algún equipo y aún no llegamos a 13 (tiempo regular),
-  // “snap” a 13 de forma determinista siguiendo el patrón del último tramo
-  // Solo permitimos snap si seguimos en el mismo mapa y ya había historial de rondas
-  // después:
+  // Snap local a 13-x sólo si seguimos en el mismo mapa y ya había historial
   const canSnap = sameMap && prevTotal > 0;
   if ((curW1 > prevW1 || curW2 > prevW2) && canSnap) {
-
     const winner = curW1 > prevW1 ? 1 : 2;
     const totalWinner = winner === 1 ? total1 : total2;
 
-    // Solo aplicamos snap si no estamos ya en 13/OT
     if (totalWinner < 13) {
-      const missing = 13 - totalWinner; // 1 en la mayoría de los casos
+      const missing = 13 - totalWinner;
       const startSide = winner === 1 ? baseMeta.start1 : baseMeta.start2;
       const dist = distributeByPattern(startSide, prevTotal + d1 + d2, missing);
-
       if (winner === 1) {
         baseRounds.t1ct += dist.ct; baseRounds.t1t += dist.t;
       } else {
         baseRounds.t2ct += dist.ct; baseRounds.t2t += dist.t;
       }
     }
-
-    // marca el fin de mapa por diamantes (aunque el feed no haya dado la última ronda)
-    baseMeta.mapWin = true;
+    baseMeta.mapWin = true; // cerramos el mapa localmente
   }
 
   const meta = {
@@ -522,7 +509,7 @@ function hydrateWithSegmentsOnce(matches, segments) {
     return {
       ...m,
       status: nextStatus,
-      // ⚠️ No actualices mapa/imagen/número mientras está LIVE.
+      // ⛔️ En LIVE no “brinques” de mapa; lo hará resetMapState cuando haya señales claras.
       currentMap:
         nextStatus === "LIVE"
           ? (m.currentMap || segMap || null)
@@ -567,7 +554,6 @@ async function hydratePreciselyOnce(matches) {
 
     // ⚠️ No cambies de mapa en LIVE; que lo haga resetMapState
     if (!m.currentMap && segMap) {
-      // Solo si aún no teníamos mapa definido
       next.currentMap = segMap;
       next.mapImage = resolveMapImage(segMap);
     }
@@ -711,7 +697,7 @@ export default function HomeMatches({ today, next, completed }) {
       const twoC = await hydratePreciselyOnce(oneC);
       if (cancelled) return;
 
-      // transición post-final → siguiente mapa o completed
+      // segs/ se obtienen arriba en cada efecto (ya los tienes)
       const findSegFor = (m) =>
         segs.find((s) => (s?.match_page || "").trim() === (m?.vlrUrl || "").trim());
 
@@ -720,16 +706,20 @@ export default function HomeMatches({ today, next, completed }) {
         if (!endedMap) return m;
 
         const seg = findSegFor(m);
+        const goneFromFeed = !seg; // el match ya no viene en el live feed
 
-        if (isSeriesOver(m)) {
-          return { ...markFinalMeta(m), status: "FINAL" }; // solo aquí mostramos FINAL (para Completed)
+        // Si la serie ya terminó (por diamantes/bo), o el match ya no aparece y la serie estaba decidida, mover a Completed
+        if (isSeriesOver(m) || (goneFromFeed && isSeriesOver(m))) {
+          return { ...markFinalMeta(m), status: "FINAL" };
         }
 
+        // Si NO terminó la serie y sí vemos el nuevo mapa en el feed, resetea de inmediato (LIVE→LIVE)
         if (seg && shouldResetForNextMap(m, seg)) {
-          return resetMapState(m, seg); // LIVE→LIVE (mapa 2)
+          return resetMapState(m, seg);
         }
 
-        return m; // espera al siguiente tick con cambio de mapa
+        // Si no vemos aún el nuevo mapa, mantén LIVE con el 13-x local hasta el siguiente tick
+        return m;
       });
 
       const stayUp = progressedU.filter((m) => m.status !== "FINAL");
@@ -737,7 +727,6 @@ export default function HomeMatches({ today, next, completed }) {
 
       setUpcoming(stayUp);
       setCompletedList(twoC.concat(moved));
-
     }
 
     tick();
