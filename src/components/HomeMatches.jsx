@@ -56,7 +56,7 @@ async function ensureLogosFor(matches) {
 }
 
 /* ================== Live cache (persiste entre reloads) ================== */
-const LIVE_CACHE_KEY = "vlr_live_rounds_v1";
+const LIVE_CACHE_KEY = "vlr_live_rounds_v2";
 
 /** Lee todo el cache */
 function readLiveCache() {
@@ -199,7 +199,18 @@ function mergeLiveRounds(prevRounds = null, seg = null, prevKey = "", prevMeta =
       ? { ...prevMeta }
       : cached?.meta
         ? { ...cached.meta }
-        : { start1: null, start2: null, _prov1: 0, _prov2: 0, _total: 0, lastStableTotal: 0, _wins1: 0, _wins2: 0, mapWin: false };
+        : {
+          start1: null,
+          start2: null,
+          _prov1: 0,
+          _prov2: 0,
+          _total: 0,
+          lastStableTotal: 0,
+          _wins1: Number(prevMeta?._wins1 ?? 0),
+          _wins2: Number(prevMeta?._wins2 ?? 0),
+          mapWin: false,
+        };
+
 
   // --- lecturas sesgadas por lado ---
   const r1 = readProvided(seg, 1);
@@ -249,7 +260,11 @@ function mergeLiveRounds(prevRounds = null, seg = null, prevKey = "", prevMeta =
 
   // si aumentó el win de algún equipo y aún no llegamos a 13 (tiempo regular),
   // “snap” a 13 de forma determinista siguiendo el patrón del último tramo
-  if (curW1 > prevW1 || curW2 > prevW2) {
+  // Solo permitimos snap si seguimos en el mismo mapa y ya había historial de rondas
+  // después:
+  const canSnap = sameMap && prevTotal > 0;
+  if ((curW1 > prevW1 || curW2 > prevW2) && canSnap) {
+
     const winner = curW1 > prevW1 ? 1 : 2;
     const totalWinner = winner === 1 ? total1 : total2;
 
@@ -363,38 +378,64 @@ function markFinalMeta(m) {
 
 function shouldResetForNextMap(m, seg) {
   const meta = m?._mapMeta || {};
-  if (!meta.finalTs) return false;
-  const cooled = Date.now() - meta.finalTs >= FINAL_COOLDOWN_MS;
-
   const segMap = getSegMapName(seg);
-  const changedMap = segMap && segMap !== m.currentMap;
+  const segMapNum = Number(seg?.map_number ?? seg?.mapNumber ?? NaN);
+  const curMapNum = Number(m?.mapNumber ?? NaN);
 
+  // rondas del snapshot actual
   const p1 =
     Number(seg?.team_1_round_ct || seg?.team1_round_ct || seg?.team_1_round_t || seg?.team1_round_t || 0) || 0;
   const p2 =
     Number(seg?.team_2_round_ct || seg?.team2_round_ct || seg?.team_2_round_t || seg?.team2_round_t || 0) || 0;
-  const looksReset = p1 + p2 === 0;
+  const sum = p1 + p2;
 
-  return cooled && (changedMap || looksReset);
+  // señales fuertes de NUEVO MAPA (reset inmediato)
+  const mapNumberAdvanced = Number.isFinite(segMapNum) && Number.isFinite(curMapNum) && segMapNum > curMapNum;
+  const mapNameChanged = !!segMap && segMap !== m.currentMap;
+  const newRoundsOnNewMap = (mapNumberAdvanced || mapNameChanged) && sum >= 0;
+
+  if (mapNumberAdvanced || mapNameChanged || newRoundsOnNewMap) return true;
+
+  // fallback: cooldown + 0–0
+  if (!meta.finalTs) return false;
+  const cooled = Date.now() - meta.finalTs >= FINAL_COOLDOWN_MS;
+  const looksReset = sum === 0;
+
+  return cooled && looksReset;
 }
 
 function resetMapState(m, seg) {
   const segMap = getSegMapName(seg);
   const newKey = mapKeyOf({ map: segMap });
+
   const start1 = m?._mapMeta?.start1 || null;
   const start2 = m?._mapMeta?.start2 || null;
 
-  const freshMeta = { start1, start2, _prov1: 0, _prov2: 0, _total: 0, lastStableTotal: 0 };
+  const freshMeta = {
+    start1,
+    start2,
+    _prov1: 0,
+    _prov2: 0,
+    _total: 0,
+    lastStableTotal: 0,
+    _wins1: m?._mapMeta?._wins1 ?? m?.series?.wins1 ?? 0,
+    _wins2: m?._mapMeta?._wins2 ?? m?.series?.wins2 ?? 0,
+    mapWin: false,
+    finalTs: undefined
+  };
+
   const freshRounds = { t1ct: 0, t1t: 0, t2ct: 0, t2t: 0 };
+  const nextMapNumber = Number(seg?.map_number ?? seg?.mapNumber ?? (Number(m?.mapNumber ?? 0) + 1));
 
   return {
     ...m,
-    status: "LIVE",
+    status: "LIVE", // ← seguimos en LIVE
     currentMap: segMap || m.currentMap || null,
     mapImage: segMap ? resolveMapImage(segMap) : m.mapImage || null,
     _mapKey: newKey || m._mapKey,
     _mapMeta: freshMeta,
     rounds: freshRounds,
+    mapNumber: Number.isFinite(nextMapNumber) ? nextMapNumber : m.mapNumber
   };
 }
 
@@ -481,10 +522,20 @@ function hydrateWithSegmentsOnce(matches, segments) {
     return {
       ...m,
       status: nextStatus,
-      currentMap: segMap || m.currentMap || null,
-      mapImage: segMap ? resolveMapImage(segMap) : m.mapImage || null,
+      // ⚠️ No actualices mapa/imagen/número mientras está LIVE.
+      currentMap:
+        nextStatus === "LIVE"
+          ? (m.currentMap || segMap || null)
+          : (segMap || m.currentMap || null),
+      mapImage:
+        nextStatus === "LIVE"
+          ? (m.mapImage || (segMap ? resolveMapImage(segMap) : null))
+          : (segMap ? resolveMapImage(segMap) : m.mapImage || null),
       vlrUrl: seg.match_page || m.vlrUrl,
-      mapNumber: seg.map_number ?? m.mapNumber,
+      mapNumber:
+        nextStatus === "LIVE"
+          ? m.mapNumber
+          : (seg.map_number ?? m.mapNumber),
       event: seg.match_event || m.event || null,
       seriesTitle: seg.match_series || m.seriesTitle || null,
       _mapKey: merged.mapKey,
@@ -514,7 +565,9 @@ async function hydratePreciselyOnce(matches) {
 
     let next = { ...m, _mapKey: merged.mapKey, _mapMeta: merged.meta, rounds: merged.rounds };
 
-    if (segMap && segMap !== m.currentMap) {
+    // ⚠️ No cambies de mapa en LIVE; que lo haga resetMapState
+    if (!m.currentMap && segMap) {
+      // Solo si aún no teníamos mapa definido
       next.currentMap = segMap;
       next.mapImage = resolveMapImage(segMap);
     }
@@ -600,23 +653,33 @@ export default function HomeMatches({ today, next, completed }) {
       );
 
       // transición post-final → siguiente mapa o completed (inicial)
+      // marcar/avanzar mapa o finalizar serie
       const segsNow = await fetchLiveSegmentsFromProxy();
       const findSegFor = (m) =>
         segsNow.find((s) => (s?.match_page || "").trim() === (m?.vlrUrl || "").trim());
 
-      const transitionedU = readyU.map((m) => {
-        if (m.status === "FINAL") {
-          if (isSeriesOver(m)) return m; // se mandará a completed abajo
-          const seg = findSegFor(m);
-          if (seg && shouldResetForNextMap(m, seg)) {
-            return resetMapState(m, seg);
-          }
+      const progressedU = hyd2U.map((m) => {
+        const endedMap = isMapFinal(m.rounds) || m?._mapMeta?.mapWin;
+        if (!endedMap) return m;
+
+        const seg = findSegFor(m);
+
+        // si la serie ya terminó -> FINAL (para mandar a Completed)
+        if (isSeriesOver(m)) {
+          return { ...markFinalMeta(m), status: "FINAL" };
         }
+
+        // si NO terminó la serie -> reset inmediato al nuevo mapa (sin mostrar FINAL)
+        if (seg && shouldResetForNextMap(m, seg)) {
+          return resetMapState(m, seg);
+        }
+
+        // no hay señales de nuevo mapa todavía: lo dejamos LIVE con el 13-x hasta que llegue el cambio
         return m;
       });
 
-      const stayUp = transitionedU.filter((m) => !(m.status === "FINAL" && isSeriesOver(m)));
-      const moved = transitionedU.filter((m) => m.status === "FINAL" && isSeriesOver(m));
+      const stayUp = progressedU.filter((m) => m.status !== "FINAL");
+      const moved = progressedU.filter((m) => m.status === "FINAL");
 
       setUpcoming(stayUp);
       setCompletedList(hyd2C.concat(moved));
@@ -649,30 +712,32 @@ export default function HomeMatches({ today, next, completed }) {
       if (cancelled) return;
 
       // transición post-final → siguiente mapa o completed
-      const findSegFor = (m) => segs.find((s) => (s?.match_page || "").trim() === (m?.vlrUrl || "").trim());
+      const findSegFor = (m) =>
+        segs.find((s) => (s?.match_page || "").trim() === (m?.vlrUrl || "").trim());
 
-      const transitionedU_pre = twoU.map((m) =>
-        m.status === "LIVE" && (isMapFinal(m.rounds) || m?._mapMeta?.mapWin)
-          ? { ...markFinalMeta(m), status: "FINAL" }
-          : m
-      );
+      const progressedU = twoU.map((m) => {
+        const endedMap = isMapFinal(m.rounds) || m?._mapMeta?.mapWin;
+        if (!endedMap) return m;
 
-      const transitionedU = transitionedU_pre.map((m) => {
-        if (m.status === "FINAL") {
-          if (isSeriesOver(m)) return m;
-          const seg = findSegFor(m);
-          if (seg && shouldResetForNextMap(m, seg)) {
-            return resetMapState(m, seg);
-          }
+        const seg = findSegFor(m);
+
+        if (isSeriesOver(m)) {
+          return { ...markFinalMeta(m), status: "FINAL" }; // solo aquí mostramos FINAL (para Completed)
         }
-        return m;
+
+        if (seg && shouldResetForNextMap(m, seg)) {
+          return resetMapState(m, seg); // LIVE→LIVE (mapa 2)
+        }
+
+        return m; // espera al siguiente tick con cambio de mapa
       });
 
-      const stayUp = transitionedU.filter((m) => !(m.status === "FINAL" && isSeriesOver(m)));
-      const moved = transitionedU.filter((m) => m.status === "FINAL" && isSeriesOver(m));
+      const stayUp = progressedU.filter((m) => m.status !== "FINAL");
+      const moved = progressedU.filter((m) => m.status === "FINAL");
 
       setUpcoming(stayUp);
       setCompletedList(twoC.concat(moved));
+
     }
 
     tick();
