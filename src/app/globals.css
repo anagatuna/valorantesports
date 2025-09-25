@@ -1166,93 +1166,120 @@ main {
   /* el borde lo pones en cada .sched */
 }
 
-/* ======== GLASS TUNING (overrides) ======== */
-/* Paleta/controles del cristal */
-:root{
-  --glass-h: 355;          /* rojo */
-  --glass-s: 60%;
-  --glass-l: 12%;          /* más oscuro (tinte base) */
-  --glass-alpha: .66;      /* opacidad del cristal */
+/* =========================
+   GLASS DARK (neutral gris)
+   – contraste alto sobre fondo rojo
+   – conserva degradés/brands de logos
+========================= */
+:root {
+  /* Base del vidrio (neutral, sin tinte azul) */
+  --glass-dark: rgb(23, 21, 21);
+  --glass-dark-hover: rgba(23, 21, 21, 0.94);
 
-  /* Card base (fondo de la card por si no hay blur) */
-  --bg-card: rgba(36, 12, 14, 0.62);
-  --bg-card-hover: rgba(36, 12, 14, 0.78);
+  /* Realces/bordes sutiles */
+  --glass-edge: hsla(0, 0%, 100%, .10);
+  --glass-stroke: hsla(0, 0%, 0%, .30);
 
-  /* Tintas de texto en modo glass */
-  --ink: #f1f4f6;
-  --ink-dim: rgba(241,244,246,.82);
-  --ink-soft: rgba(241,244,246,.70);
+  /* Tintas de texto dentro del glass */
+  --ink: #f2f4f6;
+  --ink-dim: rgba(242, 244, 246, .82);
+  --ink-soft: rgba(242, 244, 246, .70);
 }
 
-/* ============ Componente ============ */
-.sched--glass{
+/* Card “vidrio” neutral */
+.sched--glass {
   position: relative;
-  isolation: isolate; /* aísla la capa para que el blur no “sangre” */
+  isolation: isolate;
+  /* aísla el blur */
   color: var(--ink);
 
-  /* Vidrio esmerilado con tinte vino/rojo */
-  background: rgba(47, 18, 20, 0.45);
-  backdrop-filter: blur(20px) saturate(140%);
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  /* Fondo gris oscuro translúcido (sin tinte azulado) */
+  background: var(--glass-dark);
 
-  /* Borde y radios estilo iOS */
+  /* Frosted glass */
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+
+  /* Bordes/sombras (luz profunda, nada neón) */
   border-radius: 4px;
-
-  /* Sombras: profundidad + brillo interior sutil */
   box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.35),
-    inset 0 1px 1px rgba(255, 255, 255, 0.08);
+    0 10px 26px rgba(0, 0, 0, .34),
+    /* profundidad */
+    inset 0 0 0 1px rgba(255, 255, 255, .04);
+  /* brillo interior muy sutil */
 
-  transition: transform .30s ease, box-shadow .30s ease, background-color .30s ease;
+  transition: background .28s ease, transform .28s ease, box-shadow .28s ease;
 }
 
-/* Brillo superior (reflex del vidrio) */
-.sched--glass::before{
+/* Reflex superior del vidrio */
+.sched--glass::before {
   content: "";
   position: absolute;
   inset: 0;
-  z-index: -1;                /* por debajo del contenido */
   pointer-events: none;
   border-radius: inherit;
-  /* Luz suave cayendo desde arriba */
-  background: linear-gradient(180deg, rgba(255,255,255,.14), transparent 40%);
+  /* luz suave cayendo desde arriba (neutral, sin azul) */
+  background: linear-gradient(180deg, rgba(255, 255, 255, .12), transparent 42%);
   opacity: .18;
 }
 
-/* Watermarks/brands dentro del vidrio: menos “leche” */
-.sched--glass .sched__wm{
-  opacity: .5;
-  mix-blend-mode: normal;
-  filter: saturate(115%) blur(.1px);
-}
-.sched--glass .sched__wm-img{
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 24%, #000 76%, transparent 100%);
-          mask-image: linear-gradient(90deg, transparent 0%, #000 24%, #000 76%, transparent 100%);
-}
-
-/* Banner central más nítido (menos leche) */
-.sched--glass .sched__center-img{
-  filter: opacity(36%) contrast(140%) saturate(120%) hue-rotate(-4deg);
-}
-
-/* Pastilla VS: un poquito más marcada */
-.sched--glass .vs{
-  background: hsla(0,0%,100%,.10);
-  border-color: rgba(0,0,0,.22);
-}
-
-/* Hover: un pelín más sólido y con más profundidad sin volverse neón */
-.sched--glass:hover{
-  transform: translateY(-1px);
-  background: rgba(47, 18, 20, 0.55);
+/* Hover: un poco más sólido y con más “peso” */
+.sched--glass:hover {
+  background: var(--glass-dark-hover);
+  transform: translateY(-2px);
   box-shadow:
-    0 12px 32px rgba(0, 0, 0, 0.45),
-    inset 0 1px 1px rgba(255, 255, 255, 0.10);
+    0 14px 34px rgba(0, 0, 0, .40),
+    inset 0 0 0 1px rgba(255, 255, 255, .05);
 }
 
-/* Accesibilidad: reduce efectos si el usuario pide menos animación */
-@media (prefers-reduced-motion: reduce){
-  .sched--glass{
+/* ====== Elementos internos del card ====== */
+
+/* Mantén tus degradés/brands: solo ajustamos opacidad para que no “laven” el vidrio */
+.sched--glass .sched__wm {
+  opacity: .45;
+  /* visibles pero discretos */
+  mix-blend-mode: normal;
+  /* evita lavado de color */
+  filter: saturate(110%) blur(.1px);
+}
+
+.sched--glass .sched__wm-img {
+  /* Máscara para que el degradé se funda en los bordes y no invada el centro */
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 24%, #000 76%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 24%, #000 76%, transparent 100%);
+}
+
+/* Banner/mapa central: menos “leche”, más contraste, sin tinte azul */
+.sched--glass .sched__center-img {
+  filter: opacity(34%) contrast(138%) saturate(112%);
+}
+
+/* Pastilla VS más legible sobre el gris */
+.sched--glass .vs {
+  background: hsla(0, 0%, 100%, .10);
+  border-color: rgba(0, 0, 0, .24);
+  color: var(--ink-dim);
+}
+
+/* Tipografías dentro del glass */
+.sched--glass .time__date,
+.sched--glass .meta-chip {
+  color: var(--ink-dim);
+}
+
+.sched--glass .team__name,
+.sched--glass .meta-sep {
+  color: var(--ink-soft);
+}
+
+.sched--glass .team__abbr,
+.sched--glass .score__num {
+  color: var(--ink);
+}
+
+/* Accesibilidad: menos motion si el usuario lo pide */
+@media (prefers-reduced-motion: reduce) {
+  .sched--glass {
     transition: none;
   }
 }
