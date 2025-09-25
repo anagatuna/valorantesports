@@ -1245,8 +1245,8 @@ main {
 
 .sched--glass .sched__wm-img {
   /* Máscara para que el degradé se funda en los bordes y no invada el centro */
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 24%, #000 76%, transparent 100%);
-  mask-image: linear-gradient(90deg, transparent 0%, #000 24%, #000 76%, transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 15%, #000 85%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 15%, #000 85%, transparent 100%);
 }
 
 /* Banner/mapa central: menos “leche”, más contraste, sin tinte azul */
