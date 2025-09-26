@@ -1283,3 +1283,26 @@ main {
     transition: none;
   }
 }
+
+.match-stack { margin-block: 6px; }
+
+.sched-detail-row{
+  position: relative;
+  background: #fff;
+  color: #111;
+  border-radius: 4px;
+  border: 1px solid rgba(0,0,0,.06);
+  box-shadow: 0 18px 40px rgba(0,0,0,.35);
+  overflow: hidden;
+}
+
+.sched-detail-inner{
+  padding: 16px 18px 20px;
+}
+
+/* para que el panel no se recorte */
+.match-list { overflow: visible; }
+
+/* y esto ya lo agregaste */
+.sched { position: relative; }
+.sched__click { position:absolute; inset:0; z-index:20; background:transparent; border:0; }

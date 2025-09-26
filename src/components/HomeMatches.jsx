@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ScheduleCard from "@/components/ScheduleCard";
 import { loadLogosFromCache, saveLogosToCache } from "@/utils/teamLogoCache";
+import MatchDetailRow from "@/components/MatchDetailRow";
 
 /* ================== Mapas locales ================== */
 const MAP_IMAGES = {
@@ -571,6 +572,7 @@ const POLL_MS = 30_000;
 export default function HomeMatches({ today, next, completed }) {
   const [logoMap, setLogoMap] = useState({});
   const [teamList, setTeamList] = useState([]);
+  const [openId, setOpenId] = useState(null);
 
   // Demo LIVE (puedes quitarlo si no lo quieres)
   const demoLiveMatch = useMemo(() => {
@@ -745,10 +747,31 @@ export default function HomeMatches({ today, next, completed }) {
           <h2 className="block__title text-3xl font-bold mb-10">Upcoming matches</h2>
         </div>
         {upcoming.length ? (
+          // HomeMatches.jsx (dentro del render de Upcoming)
           <div className="match-list">
-            {upcoming.map((m) => (
-              <ScheduleCard key={`u-${m.id}`} match={m} logos={logoMap} teamList={teamList} />
-            ))}
+            {upcoming.map((m) => {
+              const uid =
+                m.uid ??
+                m.id ??
+                `${m.startTs || "ts"}|${m.teams?.[0]?.name || "t1"}|${m.teams?.[1]?.name || "t2"}`;
+
+              return (
+                <div key={`u-${uid}`} className="match-stack">
+                  <ScheduleCard
+                    match={m}
+                    logos={logoMap}
+                    teamList={teamList}
+                    expanded={openId === uid}
+                    onToggle={() => setOpenId(openId === uid ? null : uid)}
+                  />
+                  {openId === uid && (
+                    <div className="sched-detail-row">
+                      <div className="sched-detail-inner">Match detail aquí…</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <p className="block__empty">No hay partidos próximos.</p>
@@ -762,9 +785,28 @@ export default function HomeMatches({ today, next, completed }) {
         </div>
         {completedList.length ? (
           <div className="match-list">
-            {completedList.map((m) => (
-              <ScheduleCard key={`c-${m.id}`} match={m} logos={logoMap} teamList={teamList} />
-            ))}
+            {completedList.map((m) => {
+              const uid =
+                m.uid ??
+                m.id ??
+                `${m.startTs || "ts"}|${m.teams?.[0]?.name || "t1"}|${m.teams?.[1]?.name || "t2"}`;
+              return (
+                <div key={`c-${uid}`} className="match-stack">
+                  <ScheduleCard
+                    match={m}
+                    logos={logoMap}
+                    teamList={teamList}
+                    expanded={openId === uid}
+                    onToggle={() => setOpenId(openId === uid ? null : uid)}
+                  />
+                  {openId === uid && (
+                    <div className="sched-detail-row">
+                      <div className="sched-detail-inner">Match detail aquí…</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <p className="block__empty">No hay resultados disponibles.</p>

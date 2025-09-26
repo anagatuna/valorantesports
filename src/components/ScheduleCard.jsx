@@ -204,7 +204,7 @@ function compactSeriesLabel(series = "") {
 }
 
 /* ===== Componente ===== */
-export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
+export default function ScheduleCard({ match, logos = {}, teamList = [], expanded = false, onToggle = () => { }, }) {
   const [mounted, setMounted] = useState(false);
   const [now, setNow] = useState(null);
 
@@ -288,7 +288,16 @@ export default function ScheduleCard({ match, logos = {}, teamList = [] }) {
   );
 
   return (
-    <div className={`sched sched--glass ${isLive ? "is-live" : ""}`}>
+    <div className={`sched sched--glass ${isLive ? "is-live" : ""} ${expanded ? "is-open" : ""}`}>
+      {/* ⬇️ NUEVO: overlay totalmente transparente que captura el click */}
+      <button
+        type="button"
+        className="sched__click"
+        aria-expanded={expanded}
+        onClick={onToggle}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onToggle()}
+      />
+
       <div className="sched__overlay" />
 
       {match.mapImage && (
