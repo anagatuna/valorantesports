@@ -197,11 +197,73 @@ function SeriesDiamonds({ wins = 0, bestOf = 3, side = "left" }) {
 }
 
 /* ===== Helper evento/serie ===== */
-function compactSeriesLabel(series = "") {
-  const s = String(series).trim();
-  if (!s) return "";
-  return s.replace(/\s*:\s*/g, " · ").replace(/\s+/g, " ");
+function isGenericLabel(s = "") {
+  const x = String(s).trim().toLowerCase();
+  return !x || x === "match" || x === "partido" || x === "game";
 }
+
+function resolveEventLoose(m = {}) {
+  return (
+    m.event ||
+    m.event_name ||
+    m.tournament ||
+    m.tournament_name ||
+    m.league?.name ||
+    m.series?.event ||
+    m.stage?.event ||
+    m.competition?.name ||
+    ""
+  );
+}
+
+function buildEventFromPieces(m = {}) {
+  const parts = [
+    m.stage?.name,
+    m.stage?.round,
+    m.bracket?.name,
+    m.bracket?.round_name,
+    m.group?.name,
+    m.group_round,
+    m.round_info || m.roundInfo,
+    m.series?.name,
+    m.series_name,
+  ]
+    .map(v => (v == null ? "" : String(v).trim()))
+    .filter(Boolean);
+
+  // Unifica separadores tipo "Playoffs : Lower Round 1" → "Playoffs · Lower Round 1"
+  const joined = parts.join(" · ").replace(/\s*[:|•]\s*/g, " · ").replace(/\s+/g, " ");
+  return joined;
+}
+
+function getEventDisplay(m = {}) {
+  const ev = String(resolveEventLoose(m) || "").trim();
+  if (ev && !isGenericLabel(ev)) return ev;
+
+  // usa seriesTitle si no es genérico
+  const ser =
+    m.seriesTitle ||
+    m.match_series ||
+    m.series_name ||
+    m.round_info ||
+    m.roundInfo ||
+    m.stage?.round ||
+    m.stage?.name ||
+    m.bracket?.round_name ||
+    m.bracket_round ||
+    m.group_round ||
+    m.group?.round ||
+    "";
+  if (ser && !isGenericLabel(ser)) return String(ser).replace(/\s*[:|•]\s*/g, " · ").replace(/\s+/g, " ").trim();
+
+  // construye a partir de piezas
+  const built = buildEventFromPieces(m);
+  return isGenericLabel(built) ? "" : built;
+}
+
+// Normaliza separadores (: | • - – —) → ' · ' y colapsa espacios
+const unifySep = (s = "") =>
+  String(s).replace(/\s*[:|•\-–—]\s*/g, " · ").replace(/\s+/g, " ").trim();
 
 /* ===== Componente ===== */
 export default function ScheduleCard({ match, logos = {}, teamList = [], expanded = false, onToggle = () => { }, }) {
@@ -244,6 +306,8 @@ export default function ScheduleCard({ match, logos = {}, teamList = [], expande
     }
     return "FINAL";
   }, [mounted, now, match.status, match.startTs, match.in]);
+
+  const evFull = useMemo(() => unifySep(getEventDisplay(match)), [match]);
 
   /* ====== Split CT/T SIEMPRE desde match.rounds (estado propio) ====== */
   const t1ct = Number(match?.rounds?.t1ct ?? 0);
@@ -375,12 +439,11 @@ export default function ScheduleCard({ match, logos = {}, teamList = [], expande
                 <SeriesDiamonds wins={wins2} bestOf={bestOf} side="right" />
               </div>
             )}
-
-            {(seriesTitle || match.event) && (
-              <div className="meta-line" title={`${seriesTitle || ""}${match.event ? " • " + match.event : ""}`}>
-                <span className="meta-chip meta-chip--series">{seriesTitle || phaseFromEvent(match.event)}</span>
-                <span className="meta-sep">·</span>
-                <span className="meta-chip meta-chip--tier">{tierLabel(match.event || seriesTitle || "")}</span>
+            {evFull && (
+              <div className="meta-line" title={evFull}>
+                <span className="meta-chip meta-chip--series">
+                  {evFull}
+                </span>
               </div>
             )}
           </div>

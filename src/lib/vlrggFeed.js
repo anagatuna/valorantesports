@@ -122,14 +122,31 @@ export async function getUpcomingTodayAndNextFromVlrgg() {
   };
 }
 
-export async function getCompletedTodayOrPrevFromVlrgg() {
-  // results (probamos varios q por compatibilidad)
-  const candidates = ["results", "completed", "recent_results"];
-  let resSegs = [];
-  for (const q of candidates) {
-    resSegs = await getSegments(q);
-    if (resSegs.length) break;
-  }
-  const items = resSegs.map((s) => segmentToMatch(s, "FINAL"));
+export async function getCompletedTodayOrPrevFromVlrgg(size = 50) {
+  const url = `https://vlr.orlandomm.net/api/v1/results?size=${size}`;
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) return { items: [] };
+  const j = await r.json();
+
+  const items = (j?.data || []).map(row => ({
+    id: row.id,
+    status: "FINAL",                   // normalizamos a lo que usa ScheduleCard
+    event: row.event || "",            // ← IMPORTANTE: pasa el event del API
+    tournament: row.tournament || "",
+    // opcional: guarda la url del match si la tienes en otro lado
+    // vlrUrl: row.url || null,
+
+    teams: (row.teams || []).map(t => ({
+      name: t.name,
+      score: Number.isFinite(Number(t.score)) ? Number(t.score) : t.score,
+      won: !!t.won,
+      country: t.country || null,
+    })),
+
+    // puedes agregar más campos si los necesitas
+    img: row.img || null,
+    ago: row.ago || null,
+  }));
+
   return { items };
 }

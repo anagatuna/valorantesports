@@ -4,7 +4,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ScheduleCard from "@/components/ScheduleCard";
 import { loadLogosFromCache, saveLogosToCache } from "@/utils/teamLogoCache";
-import MatchDetailRow from "@/components/MatchDetailRow";
 
 /* ================== Mapas locales ================== */
 const MAP_IMAGES = {
@@ -28,6 +27,22 @@ const resolveMapImage = (mapName) => {
   const key = normMap(mapName || "");
   return MAP_IMAGES[key] || MAP_IMAGES.unknown || null;
 };
+
+/* ================== Normalizador para detectar el evento ================== */
+function resolveEvent(raw = {}) {
+  return (
+    (raw.event && String(raw.event).trim()) ||
+    (raw.tournament && String(raw.tournament).trim()) ||
+    (raw.league?.name && String(raw.league.name).trim()) ||
+    (raw.stage?.event && String(raw.stage.event).trim()) ||
+    (raw.series?.event && String(raw.series.event).trim()) ||
+    (raw.stage?.name && String(raw.stage.name).trim()) ||
+    ""
+  );
+}
+function normalizeMatch(raw = {}) {
+  return { ...raw, event: resolveEvent(raw) };
+}
 
 /* ================== Logos ================== */
 async function ensureLogosFor(matches) {
@@ -594,15 +609,15 @@ export default function HomeMatches({ today, next, completed }) {
   }, []);
 
   const baseUpcoming = useMemo(() => {
-    const a = today?.items || [];
-    const b = next?.items || [];
+    const a = (today?.items || []).map(normalizeMatch);
+    const b = (next?.items || []).map(normalizeMatch);
     return [demoLiveMatch, ...a, ...b].slice(0, 8).map(decorateWithLocalMapAndSeries);
   }, [today, next, demoLiveMatch]);
 
-  const baseCompleted = useMemo(
-    () => (completed?.items || []).slice(0, 8).map(decorateWithLocalMapAndSeries),
-    [completed]
-  );
+  const baseCompleted = useMemo(() => {
+    const c = (completed?.items || []).map(normalizeMatch);
+    return c.slice(0, 8).map(decorateWithLocalMapAndSeries);
+  }, [completed]);
 
   const [upcoming, setUpcoming] = useState(baseUpcoming);
   const [completedList, setCompletedList] = useState(baseCompleted);
@@ -768,9 +783,9 @@ export default function HomeMatches({ today, next, completed }) {
                   />
 
                   <div className="sched-anim">
-                      <div className="sched-detail-row">
-                        <div className="sched-detail-inner">Match detail aquí…</div>
-                      </div>
+                    <div className="sched-detail-row">
+                      <div className="sched-detail-inner">Match detail aquí…</div>
+                    </div>
                   </div>
                 </div>
               );
@@ -787,7 +802,7 @@ export default function HomeMatches({ today, next, completed }) {
           <h2 className="block__title text-3xl font-bold mb-10">Completed matches</h2>
         </div>
         {completedList.length ? (
-                    <div className="match-list">
+          <div className="match-list">
             {completedList.map((m) => {
               const uid =
                 m.uid ??
@@ -807,9 +822,9 @@ export default function HomeMatches({ today, next, completed }) {
                   />
 
                   <div className="sched-anim">
-                      <div className="sched-detail-row">
-                        <div className="sched-detail-inner">Match detail aquí…</div>
-                      </div>
+                    <div className="sched-detail-row">
+                      <div className="sched-detail-inner">Match detail aquí…</div>
+                    </div>
                   </div>
                 </div>
               );
