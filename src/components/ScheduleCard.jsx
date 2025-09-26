@@ -229,6 +229,55 @@ function getCompletedAgoStr(m = {}) {
   return typeof s === "string" ? s.trim() : null;
 }
 
+function getEndTsFromMatch(m = {}, nowMs = Date.now()) {
+  // explícitos
+  const explicit = [m.endTs, m.end_time, m.endTime, m.completedAt, m.finished_at];
+  for (const c of explicit) {
+    const ts = parseTsValue(c);
+    if (ts != null) return ts;
+  }
+  // derivado de "7h 21m ago"
+  const ago = getCompletedAgoStr(m);
+  if (ago) {
+    const ms = parseAgoToMs(ago);
+    if (ms) return nowMs - ms;
+  }
+  return null;
+}
+
+// extrae un posible start desde el JSON del detalle (varios alias, seg/objeto/anidado)
+function pickStartFromDetail(payload) {
+  const cand = [];
+
+  const push = (v) => {
+    const n = parseTsValue(v);
+    if (n != null) cand.push(n < 1e12 ? n * 1000 : n); // segundos → ms
+  };
+
+  const scan = (o) => {
+    if (!o || typeof o !== "object") return;
+    for (const [k, v] of Object.entries(o)) {
+      const key = k.toLowerCase();
+      if (typeof v === "object") scan(v);
+      else if (
+        /start|sched/.test(key) && (typeof v === "number" || typeof v === "string")
+      ) push(v);
+      else if (
+        /unix|timestamp/.test(key) && (typeof v === "number" || typeof v === "string")
+      ) push(v);
+      else if (
+        /time|date/.test(key) && (typeof v === "number" || typeof v === "string")
+      ) push(v);
+    }
+  };
+
+  scan(payload);
+  // heurística: preferimos valores en el pasado pero no absurdamente viejos
+  const now = Date.now();
+  cand.sort((a, b) => Math.abs(now - a) - Math.abs(now - b));
+  return cand[0] ?? null;
+}
+
 /* ===== Series (diamantes) ===== */
 function getBestOf(match, s1, s2) {
   const candidates = [
@@ -373,15 +422,20 @@ export default function ScheduleCard({ match, logos = {}, teamList = [], expande
           if (!res.ok) return;
           const data = await res.json();
 
-          // Mapea el campo de hora de inicio que devuelva tu detalle:
-          // ejemplos posibles: unix epoch, ISO string, etc.
-          const tsCandidate =
+          // intenta alias conocidos primero…
+          let tsCandidate =
             data?.data?.unix_time ??
             data?.data?.start_unix ??
             data?.data?.startTime ??
             data?.data?.time_iso ??
             data?.data?.start_iso ??
+            data?.data?.unix_timestamp ??
             null;
+
+          // …y si no, busca profundo en todo el payload
+          if (tsCandidate == null) {
+            tsCandidate = pickStartFromDetail(data);
+          }
 
           const parsed = parseTsValue(tsCandidate);
           if (!abort && parsed != null) setStartTsLocal(parsed);
@@ -397,9 +451,15 @@ export default function ScheduleCard({ match, logos = {}, teamList = [], expande
 
   const isLive = match.status === "LIVE";
 
-  const dateStr = mounted && ts ? ddMMM(ts) : "";
-  const timeStr = mounted && ts ? tHM(ts) : "";
-  const tzStr = mounted && ts ? tzAbbr(ts) : "";
+  // arriba del render, después de calcular ts
+  const endTsMs = useMemo(() => getEndTsFromMatch(match, Date.now()), [match]);
+  const endTs = endTsMs ? new Date(endTsMs) : null;
+  const displayTs = ts || endTs;          // usamos inicio si hay; si no, fin
+  const usingEnd = !ts && !!endTs;       // true si estamos mostrando el fin
+
+  const dateStr = mounted && displayTs ? ddMMM(displayTs) : "";
+  const timeStr = mounted && displayTs ? tHM(displayTs) : "";
+  const tzStr = mounted && displayTs ? tzAbbr(displayTs) : "";
 
   const statusStr = useMemo(() => {
     if (!mounted) return "";
