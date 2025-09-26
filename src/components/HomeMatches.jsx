@@ -44,6 +44,40 @@ function normalizeMatch(raw = {}) {
   return { ...raw, event: resolveEvent(raw) };
 }
 
+function mapCompletedItem(seg = {}) {
+  // normaliza equipos a tu formato esperado
+  const teams =
+    Array.isArray(seg.teams) && seg.teams.length >= 2
+      ? seg.teams
+      : [
+          { name: seg.team1, score: Number(seg.score1) },
+          { name: seg.team2, score: Number(seg.score2) },
+        ];
+
+  // unifica alias del "ago"
+  const time_completed =
+    seg.time_completed ??
+    seg.timeCompleted ??
+    seg.completed_ago ??
+    seg.completedAgo ??
+    seg.finished_ago ??
+    seg.finishedAgo ??
+    seg.timeago ??
+    seg.ago ??
+    null;
+
+  // el path de detalle
+  const match_page = seg.match_page ?? seg.matchPage ?? seg.vlrUrl ?? seg.url ?? null;
+
+  return {
+    ...seg,
+    status: "FINAL",
+    teams,
+    time_completed,
+    match_page,
+  };
+}
+
 /* ================== Logos ================== */
 async function ensureLogosFor(matches) {
   const needed = new Set();
@@ -550,6 +584,55 @@ function hydrateWithSegmentsOnce(matches, segments) {
   });
 }
 
+/* ===== Robust TS parsing & 'ago' parsing ===== */
+function parseTsValue(v) {
+  if (v == null) return null;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+    const t = Date.parse(v);
+    if (!Number.isNaN(t)) return t;
+  }
+  return null;
+}
+
+function parseAgoToMs(s = "") {
+  // soporta: "5h 41m ago", "22m ago", "2d 3h ago", "1d ago"
+  const tot = { d: 0, h: 0, m: 0 };
+  const rx = /(\d+)\s*(d|h|m)/gi;
+  let k;
+  while ((k = rx.exec(s))) {
+    const val = Number(k[1]);
+    const u = k[2].toLowerCase();
+    if (u === "d") tot.d += val;
+    if (u === "h") tot.h += val;
+    if (u === "m") tot.m += val;
+  }
+  return ((tot.d * 24 + tot.h) * 60 + tot.m) * 60_000;
+}
+
+function formatAgo(ms) {
+  const mins = Math.max(0, Math.floor(ms / 60000));
+  const d = Math.floor(mins / (60 * 24));
+  const h = Math.floor((mins - d * 24 * 60) / 60);
+  const mm = mins % 60;
+  if (d > 0) return h ? `${d}d ${h}h` : `${d}d`;
+  return h ? `${h}h ${mm}m` : `${mm}m`;
+}
+
+/* Preferimos startTs si existe; si no, lo cargamos del detalle */
+function getStartTsFromMatch(m = {}) {
+  const cand = [
+    m.startTs, m.start_time, m.startTime, m.scheduled_at, m.scheduledAt, m.time, m.date
+  ];
+  for (const c of cand) {
+    const ts = parseTsValue(c);
+    if (ts != null) return ts;
+  }
+  return null;
+}
+
 /** Precisión (mismo endpoint) */
 async function hydratePreciselyOnce(matches) {
   const segs = await fetchLiveSegmentsFromProxy();
@@ -615,8 +698,12 @@ export default function HomeMatches({ today, next, completed }) {
   }, [today, next, demoLiveMatch]);
 
   const baseCompleted = useMemo(() => {
-    const c = (completed?.items || []).map(normalizeMatch);
-    return c.slice(0, 8).map(decorateWithLocalMapAndSeries);
+    const c = (completed?.items || [])
+      .map(mapCompletedItem)   // <-- normaliza primero
+      .map(normalizeMatch)     // <-- conserva todo + event
+      .map(decorateWithLocalMapAndSeries);
+
+    return c.slice(0, 8);
   }, [completed]);
 
   const [upcoming, setUpcoming] = useState(baseUpcoming);

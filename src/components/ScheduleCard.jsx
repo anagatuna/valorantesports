@@ -162,6 +162,73 @@ function officialTag(name = "") {
   return letters.length >= 2 && letters.length <= 4 ? letters : up.slice(0, 3);
 }
 
+/* ===== Helpers p/ startTs y "hace X" ===== */
+function parseTsValue(v) {
+  if (v == null) return null;
+  if (typeof v === "number" && Number.isFinite(v)) return v;     // epoch ms/seg
+  if (typeof v === "string") {
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;                            // "1717272000000" o "1717272000"
+    const t = Date.parse(v);                                     // ISO
+    if (!Number.isNaN(t)) return t;
+  }
+  return null;
+}
+
+function getStartTsFromMatch(m = {}) {
+  const cand = [
+    m.startTs, m.start_time, m.startTime,
+    m.scheduled_at, m.scheduledAt,
+    m.time, m.date
+  ];
+  for (const c of cand) {
+    const ts = parseTsValue(c);
+    if (ts != null) return ts;
+  }
+  return null;
+}
+
+// "5h 41m ago", "22m ago", "2d 3h ago", "1d ago"
+function parseAgoToMs(s = "") {
+  const tot = { d: 0, h: 0, m: 0 };
+  const rx = /(\d+)\s*(d|h|m)/gi;
+  let k;
+  while ((k = rx.exec(s))) {
+    const val = Number(k[1]);
+    const u = k[2].toLowerCase();
+    if (u === "d") tot.d += val;
+    if (u === "h") tot.h += val;
+    if (u === "m") tot.m += val;
+  }
+  return ((tot.d * 24 + tot.h) * 60 + tot.m) * 60_000;
+}
+
+function formatAgo(ms) {
+  const mins = Math.max(0, Math.floor(ms / 60000));
+  const d = Math.floor(mins / (60 * 24));
+  const h = Math.floor((mins - d * 24 * 60) / 60);
+  const mm = mins % 60;
+  if (d > 0) return h ? `${d}d ${h}h` : `${d}d`;
+  return h ? `${h}h ${mm}m` : `${mm}m`;
+}
+
+// === bajo formatAgo(...) agrega:
+function getCompletedAgoStr(m = {}) {
+  const s =
+    m.time_completed ??
+    m.timeCompleted ??
+    m.completed_ago ??
+    m.completedAgo ??
+    m.finished_ago ??
+    m.finishedAgo ??
+    m.end_ago ??
+    m.endAgo ??
+    m.timeago ??
+    m.ago ??
+    null;
+  return typeof s === "string" ? s.trim() : null;
+}
+
 /* ===== Series (diamantes) ===== */
 function getBestOf(match, s1, s2) {
   const candidates = [
@@ -269,6 +336,7 @@ const unifySep = (s = "") =>
 export default function ScheduleCard({ match, logos = {}, teamList = [], expanded = false, onToggle = () => { }, }) {
   const [mounted, setMounted] = useState(false);
   const [now, setNow] = useState(null);
+  const [startTsLocal, setStartTsLocal] = useState(null);
 
   useEffect(() => {
     setMounted(true);
@@ -285,10 +353,48 @@ export default function ScheduleCard({ match, logos = {}, teamList = [], expande
   const s1 = pickScore(match, 0);
   const s2 = pickScore(match, 1);
 
-  const ts = useMemo(
-    () => (typeof match.startTs === "number" ? new Date(match.startTs) : null),
-    [match.startTs]
-  );
+  const ts = useMemo(() => {
+    const raw = getStartTsFromMatch(match);
+    return raw != null ? new Date(raw) : (startTsLocal ? new Date(startTsLocal) : null);
+  }, [match, startTsLocal]);
+  useEffect(() => {
+    let abort = false;
+
+    async function loadStart() {
+      // Solo si NO tenemos startTs y sí tenemos match_page del feed de results
+      const hasStart = getStartTsFromMatch(match) != null || startTsLocal != null;
+      const isCompletedFeed = !!match.time_completed && !!match.match_page;
+      if (!hasStart && isCompletedFeed) {
+        try {
+          // Ajusta este endpoint a tu backend/route real.
+          // Idea: un proxy a vlrggapi para detalle de match.
+          const url = `/api/vlr/match?path=${encodeURIComponent(match.match_page)}`;
+          const res = await fetch(url, { cache: "no-store" });
+          if (!res.ok) return;
+          const data = await res.json();
+
+          // Mapea el campo de hora de inicio que devuelva tu detalle:
+          // ejemplos posibles: unix epoch, ISO string, etc.
+          const tsCandidate =
+            data?.data?.unix_time ??
+            data?.data?.start_unix ??
+            data?.data?.startTime ??
+            data?.data?.time_iso ??
+            data?.data?.start_iso ??
+            null;
+
+          const parsed = parseTsValue(tsCandidate);
+          if (!abort && parsed != null) setStartTsLocal(parsed);
+        } catch {
+          // silencioso
+        }
+      }
+    }
+
+    loadStart();
+    return () => { abort = true; };
+  }, [match, startTsLocal]);
+
   const isLive = match.status === "LIVE";
 
   const dateStr = mounted && ts ? ddMMM(ts) : "";
@@ -297,15 +403,28 @@ export default function ScheduleCard({ match, logos = {}, teamList = [], expande
 
   const statusStr = useMemo(() => {
     if (!mounted) return "";
+
     const nowMs = now ?? Date.now();
-    const tsNum = typeof match.startTs === "number" ? match.startTs : null;
-    if (match.status === "LIVE") return tsNum ? `LIVE • ${diffHM(nowMs - tsNum)}` : "LIVE";
+    const startNum = getStartTsFromMatch(match) ?? startTsLocal ?? null;
+
+    if (match.status === "LIVE") {
+      return startNum ? `LIVE · ${formatAgo(nowMs - startNum)}` : "LIVE";
+    }
+
     if (match.status === "UPCOMING") {
-      if (tsNum && tsNum > nowMs) return `${diffHM(tsNum - nowMs)}`;
+      if (startNum && startNum > nowMs) return formatAgo(startNum - nowMs);
       return match.in || "UPCOMING";
     }
+
+    // FINAL (Completed feed trae time_completed tipo "5h 41m ago")
+    const agoStr = getCompletedAgoStr(match);
+    if (agoStr) {
+      const ms = parseAgoToMs(agoStr);
+      return ms ? `${formatAgo(ms)} ago`
+        : `${agoStr.replace(/\s*ago\s*$/i, "").trim()} ago`;
+    }
     return "FINAL";
-  }, [mounted, now, match.status, match.startTs, match.in]);
+  }, [mounted, now, match, startTsLocal]);
 
   const evFull = useMemo(() => unifySep(getEventDisplay(match)), [match]);
 
