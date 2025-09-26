@@ -756,7 +756,7 @@ export default function HomeMatches({ today, next, completed }) {
                 `${m.startTs || "ts"}|${m.teams?.[0]?.name || "t1"}|${m.teams?.[1]?.name || "t2"}`;
 
               return (
-                <div key={`u-${uid}`} className="match-stack">
+                <div className={`match-stack ${openId === uid ? "is-open" : ""}`}>
                   <ScheduleCard
                     match={m}
                     logos={logoMap}
@@ -791,7 +791,7 @@ export default function HomeMatches({ today, next, completed }) {
                 m.id ??
                 `${m.startTs || "ts"}|${m.teams?.[0]?.name || "t1"}|${m.teams?.[1]?.name || "t2"}`;
               return (
-                <div key={`c-${uid}`} className="match-stack">
+                <div className={`match-stack ${openId === uid ? "is-open" : ""}`}>
                   <ScheduleCard
                     match={m}
                     logos={logoMap}

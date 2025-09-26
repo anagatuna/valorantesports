@@ -668,19 +668,12 @@ main {
   align-items: center;
   min-height: 110px;
   padding-block: 10px;
-  background: var(--bg-card-hover);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   box-shadow:
     0 8px 24px rgba(0, 0, 0, .2),
     0 4px 12px rgba(0, 0, 0, .1),
     inset 0 0 0 1px rgba(255, 255, 255, .06);
-  transition: background-color .3s ease, transform .3s ease;
-}
-
-.sched:hover {
-  background-color: var(--bg-card);
-  transform: translateY(-2px);
 }
 
 /* Overlay lateral (se desactiva en modo glass) */
@@ -1284,25 +1277,111 @@ main {
   }
 }
 
-.match-stack { margin-block: 6px; }
+.match-stack {
+  margin-block: 6px;
+}
 
-.sched-detail-row{
+.sched-detail-row {
   position: relative;
   background: #fff;
   color: #111;
   border-radius: 4px;
-  border: 1px solid rgba(0,0,0,.06);
-  box-shadow: 0 18px 40px rgba(0,0,0,.35);
+  border: 1px solid rgba(0, 0, 0, .06);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .35);
   overflow: hidden;
 }
 
-.sched-detail-inner{
+.sched-detail-inner {
   padding: 16px 18px 20px;
 }
 
 /* para que el panel no se recorte */
-.match-list { overflow: visible; }
+.match-list {
+  overflow: visible;
+}
 
 /* y esto ya lo agregaste */
-.sched { position: relative; }
-.sched__click { position:absolute; inset:0; z-index:20; background:transparent; border:0; }
+.sched {
+  position: relative;
+}
+
+.sched__click {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: transparent;
+  border: 0;
+}
+
+/* tu lista no debe recortar el detalle */
+.match-list {
+  overflow: visible;
+}
+
+/* separador por item (card + detalle) */
+.match-stack {
+  margin: 6px 0;
+}
+
+/* si en tu CSS actual tienes esto... */
+.match-list .sched {
+  margin-block: 6px;
+}
+
+/* …entonces pegamos el detalle “encima” usando margen negativo */
+.match-stack .sched-detail-row {
+  margin-top: -6px;
+}
+
+/* cuando está abierto, redondeamos arriba en la card y abajo en el detalle */
+.match-stack.is-open .sched {
+  border-radius: 4px 4px 0 0;
+  /* solo arriba */
+}
+
+/* aspecto del panel de detalle (pegado) */
+.sched-detail-row {
+  background: #fff;
+  color: #111;
+  border: 1px solid rgba(0, 0, 0, .08);
+  border-top: 0;
+  /* comparte borde con la card */
+  border-radius: 0 0 4px 4px;
+  /* solo abajo */
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .35);
+  overflow: hidden;
+}
+
+.sched-detail-inner {
+  padding: 16px 18px 20px;
+}
+
+/* === Desactivar cualquier hover cuando esté abierto === */
+.sched.is-open:hover,
+.sched--glass.is-open:hover {
+  /* anula el cambio de fondo/sombra/transform */
+  background: var(--glass-dark) !important;  /* si tu card “no glass” usa otro fondo, pon inherit */
+  box-shadow:
+    0 10px 26px rgba(0,0,0,.34),
+    inset 0 0 0 1px rgba(255,255,255,.04) !important;
+  transform: none !important;
+  cursor: default !important;
+}
+
+/* anula el brillo del pseudo-elemento */
+.sched--glass.is-open:hover::before {
+  opacity: .18 !important;     /* o 0 si no quieres brillo mientras está abierto */
+}
+
+/* asegura que la imagen central no cambie con hover */
+.sched.is-open:hover .sched__center-img,
+.sched--glass.is-open:hover .sched__center-img {
+  filter: opacity(34%) contrast(138%) saturate(112%) !important;
+}
+
+/* Asegura la pila: bg (0) → ::before (0) → blobs (1) → contenido (10) */
+.sched__bg { z-index: 0; }
+
+.sched--glass::before {
+  z-index: 0;            /* importante: que no tape a los blobs */
+}

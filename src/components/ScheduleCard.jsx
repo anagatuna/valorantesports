@@ -297,6 +297,9 @@ export default function ScheduleCard({ match, logos = {}, teamList = [], expande
         onClick={onToggle}
         onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onToggle()}
       />
+      {/* blobs decorativos */}
+      <span className="sched__blob sched__blob--l" aria-hidden />
+      <span className="sched__blob sched__blob--r" aria-hidden />
 
       <div className="sched__overlay" />
 
