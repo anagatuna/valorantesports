@@ -1418,13 +1418,18 @@ main {
   transform: translateY(0);
 }
 
-.match-stack { position: relative; margin: 6px 0; }
-.match-stack::after {
-  content: "";
-  display: block;
-  height: 6px;                    /* espacio normal */
-  transition: height .25s ease;
+/* No dejes margen en cada .sched dentro de la lista */
+.match-list .sched {
+  margin-block: 0; /* <-- antes tenías 6px */
 }
-.match-stack.is-open::after {
-  height: 12px;                   /* compensa el -6px del detalle */
+
+/* El gap entre items lo controla únicamente el wrapper */
+.match-stack {
+  margin: 6px 0;   
+  transition: margin .25s ease; /* anima la apertura/cierre */
+}
+
+/* Al abrir, compensamos los -6px del detalle pegado */
+.match-stack.is-open {
+  margin-bottom: 8px; /* prueba 10px u 8px si lo quieres aún más compacto */
 }
