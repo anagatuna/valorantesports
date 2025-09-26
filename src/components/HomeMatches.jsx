@@ -755,20 +755,24 @@ export default function HomeMatches({ today, next, completed }) {
                 m.id ??
                 `${m.startTs || "ts"}|${m.teams?.[0]?.name || "t1"}|${m.teams?.[1]?.name || "t2"}`;
 
+              const isOpen = openId === uid;
+
               return (
-                <div className={`match-stack ${openId === uid ? "is-open" : ""}`}>
+                <div key={`u-${uid}`} className={`match-stack ${isOpen ? "is-open" : ""}`}>
                   <ScheduleCard
                     match={m}
                     logos={logoMap}
                     teamList={teamList}
-                    expanded={openId === uid}
-                    onToggle={() => setOpenId(openId === uid ? null : uid)}
+                    expanded={isOpen}
+                    onToggle={() => setOpenId(isOpen ? null : uid)}
                   />
-                  {openId === uid && (
-                    <div className="sched-detail-row">
-                      <div className="sched-detail-inner">Match detail aquí…</div>
-                    </div>
-                  )}
+
+                  {/* 👇 solo este wrapper nuevo */}
+                  <div className="sched-anim">
+                      <div className="sched-detail-row">
+                        <div className="sched-detail-inner">Match detail aquí…</div>
+                      </div>
+                  </div>
                 </div>
               );
             })}

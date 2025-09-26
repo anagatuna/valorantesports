@@ -1360,17 +1360,19 @@ main {
 .sched.is-open:hover,
 .sched--glass.is-open:hover {
   /* anula el cambio de fondo/sombra/transform */
-  background: var(--glass-dark) !important;  /* si tu card “no glass” usa otro fondo, pon inherit */
+  background: var(--glass-dark) !important;
+  /* si tu card “no glass” usa otro fondo, pon inherit */
   box-shadow:
-    0 10px 26px rgba(0,0,0,.34),
-    inset 0 0 0 1px rgba(255,255,255,.04) !important;
+    0 10px 26px rgba(0, 0, 0, .34),
+    inset 0 0 0 1px rgba(255, 255, 255, .04) !important;
   transform: none !important;
   cursor: default !important;
 }
 
 /* anula el brillo del pseudo-elemento */
 .sched--glass.is-open:hover::before {
-  opacity: .18 !important;     /* o 0 si no quieres brillo mientras está abierto */
+  opacity: .18 !important;
+  /* o 0 si no quieres brillo mientras está abierto */
 }
 
 /* asegura que la imagen central no cambie con hover */
@@ -1380,8 +1382,49 @@ main {
 }
 
 /* Asegura la pila: bg (0) → ::before (0) → blobs (1) → contenido (10) */
-.sched__bg { z-index: 0; }
+.sched__bg {
+  z-index: 0;
+}
 
 .sched--glass::before {
-  z-index: 0;            /* importante: que no tape a los blobs */
+  z-index: 0;
+  /* importante: que no tape a los blobs */
+}
+
+/* Wrapper que controla la altura */
+.sched-anim {
+  display: grid;
+  grid-template-rows: 0fr;
+  /* cerrado */
+  transition: grid-template-rows .25s ease;
+}
+
+/* abierto */
+.match-stack.is-open .sched-anim {
+  grid-template-rows: 1fr;
+}
+
+/* transición del bloque interior */
+.sched-detail-row {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity .35s ease, transform .35s ease;
+  overflow: hidden;
+}
+
+/* visible */
+.match-stack.is-open .sched-detail-row {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.match-stack { position: relative; margin: 6px 0; }
+.match-stack::after {
+  content: "";
+  display: block;
+  height: 6px;                    /* espacio normal */
+  transition: height .25s ease;
+}
+.match-stack.is-open::after {
+  height: 12px;                   /* compensa el -6px del detalle */
 }
