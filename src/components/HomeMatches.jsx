@@ -767,7 +767,6 @@ export default function HomeMatches({ today, next, completed }) {
                     onToggle={() => setOpenId(isOpen ? null : uid)}
                   />
 
-                  {/* 👇 solo este wrapper nuevo */}
                   <div className="sched-anim">
                       <div className="sched-detail-row">
                         <div className="sched-detail-inner">Match detail aquí…</div>
@@ -788,26 +787,30 @@ export default function HomeMatches({ today, next, completed }) {
           <h2 className="block__title text-3xl font-bold mb-10">Completed matches</h2>
         </div>
         {completedList.length ? (
-          <div className="match-list">
+                    <div className="match-list">
             {completedList.map((m) => {
               const uid =
                 m.uid ??
                 m.id ??
                 `${m.startTs || "ts"}|${m.teams?.[0]?.name || "t1"}|${m.teams?.[1]?.name || "t2"}`;
+
+              const isOpen = openId === uid;
+
               return (
-                <div className={`match-stack ${openId === uid ? "is-open" : ""}`}>
+                <div key={`u-${uid}`} className={`match-stack ${isOpen ? "is-open" : ""}`}>
                   <ScheduleCard
                     match={m}
                     logos={logoMap}
                     teamList={teamList}
-                    expanded={openId === uid}
-                    onToggle={() => setOpenId(openId === uid ? null : uid)}
+                    expanded={isOpen}
+                    onToggle={() => setOpenId(isOpen ? null : uid)}
                   />
-                  {openId === uid && (
-                    <div className="sched-detail-row">
-                      <div className="sched-detail-inner">Match detail aquí…</div>
-                    </div>
-                  )}
+
+                  <div className="sched-anim">
+                      <div className="sched-detail-row">
+                        <div className="sched-detail-inner">Match detail aquí…</div>
+                      </div>
+                  </div>
                 </div>
               );
             })}
