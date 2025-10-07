@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ScheduleCard from "@/components/ScheduleCard";
 import { loadLogosFromCache, saveLogosToCache } from "@/utils/teamLogoCache";
+import MatchDetail from "@/components/MatchDetail";
 
 /* ================== Mapas locales ================== */
 const MAP_IMAGES = {
@@ -50,9 +51,9 @@ function mapCompletedItem(seg = {}) {
     Array.isArray(seg.teams) && seg.teams.length >= 2
       ? seg.teams
       : [
-          { name: seg.team1, score: Number(seg.score1) },
-          { name: seg.team2, score: Number(seg.score2) },
-        ];
+        { name: seg.team1, score: Number(seg.score1) },
+        { name: seg.team2, score: Number(seg.score2) },
+      ];
 
   // unifica alias del "ago"
   const time_completed =
@@ -871,7 +872,9 @@ export default function HomeMatches({ today, next, completed }) {
 
                   <div className="sched-anim">
                     <div className="sched-detail-row">
-                      <div className="sched-detail-inner">Match detail aquí…</div>
+                      <div className="sched-detail-inner">
+                        <MatchDetail match={m} logos={logoMap} teamList={teamList} />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -910,7 +913,9 @@ export default function HomeMatches({ today, next, completed }) {
 
                   <div className="sched-anim">
                     <div className="sched-detail-row">
-                      <div className="sched-detail-inner">Match detail aquí…</div>
+                      <div className="sched-detail-inner">
+                        <MatchDetail match={m} logos={logoMap} teamList={teamList} />
+                      </div>
                     </div>
                   </div>
                 </div>
