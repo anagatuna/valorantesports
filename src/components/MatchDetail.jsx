@@ -4,7 +4,10 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 
+/* ===== Utils ===== */
 const norm = (s) => s?.toLowerCase().replace(/[\s\-_\.]+/g, "").trim();
+const safe = (n) => Number(n ?? 0) || 0;
+
 function findLogo(name, map = {}, list = []) {
   const k = norm(name);
   if (!k) return null;
@@ -15,9 +18,8 @@ function findLogo(name, map = {}, list = []) {
   }
   return null;
 }
-const safe = (n) => Number(n ?? 0) || 0;
 
-/* agente → imagen local (según tu carpeta /public/agents/<agent>/<agent>-1.webp) */
+/* ===== Agents (local imgs) ===== */
 const AGENT_IMG = {
   jett: "/agents/jett/jett-1.webp",
   raze: "/agents/raze/raze-1.webp",
@@ -42,33 +44,20 @@ const AGENT_IMG = {
   deadlock: "/agents/deadlock/deadlock-1.webp",
   iso: "/agents/iso/iso-1.webp",
   clove: "/agents/clove/clove-1.webp",
-  vyse: "/agents/vyse/vyse-1.webp",
-  tejo: "/agents/tejo/tejo-1.webp",
-  waylay: "/agents/waylay/waylay-1.webp",
-  veto: "/agents/veto/veto-1.webp",
 };
-
-/* alias y normalizador: "KAY/O" -> "kayo", "harbour" -> "harbor", etc. */
-const AGENT_ALIAS = {
-  "kay/o": "kayo",
-  brim: "brimstone",
-  harbour: "harbor",
-};
-
+const AGENT_ALIAS = { "kay/o": "kayo", brim: "brimstone", harbour: "harbor" };
 function agentKey(s = "") {
   const base = s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-  const key = base.replace(/[^a-z/]/g, ""); // permite la slash de kay/o
-  return AGENT_ALIAS[key] || key.replace("/", ""); // kay/o -> kayo
+  const key = base.replace(/[^a-z/]/g, "");
+  return AGENT_ALIAS[key] || key.replace("/", "");
 }
-
-/* Usa imagen del API si viene; si no, la local */
 function resolveAgentImg(name, apiImg) {
   if (apiImg) return apiImg;
   const k = agentKey(name);
   return AGENT_IMG[k] || null;
 }
 
-// ----- DEMO: scoreboard por defecto (5v5) -----
+/* ===== Demo scoreboard fallback ===== */
 const DEMO_SCOREBOARD = {
   playersT1: [
     { name: "Mixwell", tag: "g2", agent: "Jett", agentImg: AGENT_IMG.jett, acs: 265, k: 19, d: 15, a: 3, plusMinus: +4 },
@@ -87,6 +76,127 @@ const DEMO_SCOREBOARD = {
   mapIndex: 1,
 };
 
+/* ===== Map selector helpers ===== */
+function normalizeMapsFromMatch(match = {}) {
+  const raw = match.maps || match.series?.maps || match.stage?.maps || match.sets || [];
+  if (Array.isArray(raw) && raw.length) {
+    return raw.map((m, i) => ({
+      key: String(m.key ?? i),
+      index: Number.isFinite(m.index) ? Number(m.index) : i,
+      name: m.name || m.map || m.mapName || m.stage?.map || `Map ${i + 1}`,
+      rounds: {
+        t1ct: safe(m?.rounds?.t1ct ?? m?.t1ct),
+        t1t: safe(m?.rounds?.t1t ?? m?.t1t),
+        t2ct: safe(m?.rounds?.t2ct ?? m?.t2ct),
+        t2t: safe(m?.rounds?.t2t ?? m?.t2t),
+      },
+    }));
+  }
+  if (match.currentMap) {
+    return [{
+      key: "cur",
+      index: 0,
+      name: match.currentMap,
+      rounds: {
+        t1ct: safe(match?.rounds?.t1ct),
+        t1t: safe(match?.rounds?.t1t),
+        t2ct: safe(match?.rounds?.t2ct),
+        t2t: safe(match?.rounds?.t2t),
+      },
+    }];
+  }
+  return [];
+}
+
+/* ===== Build round track (scrollable, soporta OT) ===== */
+function buildTrack({ t1ct = 0, t1t = 0, t2ct = 0, t2t = 0 }) {
+  const wins1 = t1ct + t1t;
+  const wins2 = t2ct + t2t;
+  const total = wins1 + wins2;
+
+  // 24 base rounds (12 + 12) usando CT/T
+  const winners = [];
+  for (let i = 0; i < 12; i++) {
+    if (i < t1ct) winners.push(1);
+    else if (i < t1ct + t2t) winners.push(2);
+    else winners.push(0);
+  }
+  for (let i = 0; i < 12; i++) {
+    if (i < t1t) winners.push(1);
+    else if (i < t1t + t2ct) winners.push(2);
+    else winners.push(0);
+  }
+
+  // Si hay OT (más de 24 rondas), añade ganadores extra alternando 1/2
+  const c1 = winners.filter((w) => w === 1).length;
+  const c2 = winners.filter((w) => w === 2).length;
+  let left1 = Math.max(0, wins1 - c1);
+  let left2 = Math.max(0, wins2 - c2);
+
+  while (winners.length < total && (left1 > 0 || left2 > 0)) {
+    if (left1-- > 0) winners.push(1);
+    if (winners.length >= total) break;
+    if (left2-- > 0) winners.push(2);
+  }
+
+  const rowT1 = winners.map((w) => (w === 1 ? "win" : w === 2 ? "loss" : "void"));
+  const rowT2 = winners.map((w) => (w === 2 ? "win" : w === 1 ? "loss" : "void"));
+  return { rowT1, rowT2 };
+}
+
+/* ===== Timeline UI ===== */
+const CELL_W = 22; // px
+const LABEL_W = 180; // px
+
+const RoundBubble = ({ type }) => {
+  const cls =
+    type === "win" ? "bg-emerald-500/80"
+      : type === "loss" ? "bg-rose-500/80"
+      : "bg-white/10";
+  return <div className={`w-[22px] h-[22px] rounded-sm ${cls}`} />;
+};
+
+const RoundRow = ({ arr = [], logo, name }) => (
+  <div className="flex items-center gap-2">
+    <div className="shrink-0" style={{ width: LABEL_W }}>
+      <div className="flex items-center gap-2">
+        {logo ? (
+          <Image src={logo} alt="" width={18} height={18} unoptimized className="opacity-80" />
+        ) : (
+          <span className="inline-block w-[18px] h-[18px] rounded bg-white/10" />
+        )}
+        <span className="text-sm font-medium">{name || "—"}</span>
+      </div>
+    </div>
+    <div className="flex items-center gap-1">
+      {arr.map((t, i) => <RoundBubble key={i} type={t} />)}
+    </div>
+  </div>
+);
+
+const MapTabs = ({ maps, selected, onSelect }) => (
+  <div className="flex gap-2 mb-4 flex-wrap">
+    <button
+      onClick={() => onSelect("all")}
+      className={`px-3 py-1 rounded-md border text-xs uppercase tracking-wide
+        ${selected === "all" ? "bg-white/10 border-black/20" : "border-black/10 hover:bg-black/5"}`}
+    >
+      All Maps
+    </button>
+    {maps.map((m, i) => (
+      <button
+        key={m.key ?? i}
+        onClick={() => onSelect(i)}
+        className={`px-3 py-1 rounded-md border text-xs uppercase tracking-wide
+          ${selected === i ? "bg-white/10 border-black/20" : "border-black/10 hover:bg-black/5"}`}
+      >
+        <span className="opacity-70 mr-1">{i + 1}</span>{m.name}
+      </button>
+    ))}
+  </div>
+);
+
+/* ===== Main component ===== */
 export default function MatchDetail({ match, logos = {}, teamList = [] }) {
   const [t1, t2] = match?.teams ?? [{}, {}];
   const [scoreboard, setScoreboard] = useState({ playersT1: [], playersT2: [], mapIndex: null });
@@ -95,50 +205,57 @@ export default function MatchDetail({ match, logos = {}, teamList = [] }) {
   const logo1 = t1?.name ? findLogo(t1.name, logos, teamList) : null;
   const logo2 = t2?.name ? findLogo(t2.name, logos, teamList) : null;
 
-  const t1ct = safe(match?.rounds?.t1ct);
-  const t1t = safe(match?.rounds?.t1t);
-  const t2ct = safe(match?.rounds?.t2ct);
-  const t2t = safe(match?.rounds?.t2t);
-
-  const tot1 = t1ct + t1t;
-  const tot2 = t2ct + t2t;
-
   const wins1 = safe(match?.series?.wins1);
   const wins2 = safe(match?.series?.wins2);
   const bo = Number(match?.series?.bestOf ?? 3);
 
-  // ====== Hidratar scoreboard cuando hay path o id ======
+  const t1ct = safe(match?.rounds?.t1ct);
+  const t1t  = safe(match?.rounds?.t1t);
+  const t2ct = safe(match?.rounds?.t2ct);
+  const t2t  = safe(match?.rounds?.t2t);
+
+  /* Map selector */
+  const maps = useMemo(() => normalizeMapsFromMatch(match), [match]);
+  const [selectedMap, setSelectedMap] = useState("all");
+  useEffect(() => { setSelectedMap(maps.length ? 0 : "all"); }, [maps.length]);
+
+  const activeRounds = useMemo(() => {
+    if (selectedMap === "all") return { t1ct, t1t, t2ct, t2t };
+    const r = maps[selectedMap]?.rounds || {};
+    return { t1ct: safe(r.t1ct), t1t: safe(r.t1t), t2ct: safe(r.t2ct), t2t: safe(r.t2t) };
+  }, [selectedMap, maps, t1ct, t1t, t2ct, t2t]);
+
+  const track = useMemo(() => buildTrack(activeRounds), [activeRounds]);
+  const roundsCount = track.rowT1.length;
+  const contentWidth = LABEL_W + roundsCount * (CELL_W + 4); // + gap aprox
+
+  /* Scoreboard fetch */
   useEffect(() => {
     let abort = false;
 
     async function load() {
       const path =
-        match?.match_page ||
-        match?.matchPage ||
-        match?.vlrUrl ||
-        match?.url ||
-        null;
+        match?.match_page || match?.matchPage || match?.vlrUrl || match?.url || null;
 
-      // intenta deducir id del path /match/<id>/
       let id = null;
       if (path) {
         const m = /\/match\/(\d+)\//.exec(String(path));
         if (m?.[1]) id = m[1];
       }
-
       if (!path && !id) return;
 
       setLoading(true);
       try {
-        // 👈 usa TU endpoint interno que normaliza vlrggapi
-        const qs = id ? `?id=${encodeURIComponent(id)}` : `?path=${encodeURIComponent(path)}`;
-        const res = await fetch(`/api/scoreboard${qs}`, { cache: "no-store" });
+        const base = id ? `?id=${encodeURIComponent(id)}` : `?path=${encodeURIComponent(path)}`;
+        const mapParam =
+          selectedMap !== "all" && Number.isFinite(maps[selectedMap]?.index)
+            ? `&map=${maps[selectedMap].index}`
+            : "";
+        const res = await fetch(`/api/scoreboard${base}${mapParam}`, { cache: "no-store" });
         const j = await res.json();
-        if (!abort && j?.ok && j?.data) {
-          setScoreboard(j.data);
-        }
+        if (!abort && j?.ok && j?.data) setScoreboard(j.data);
       } catch {
-        // silencioso
+        // silent
       } finally {
         !abort && setLoading(false);
       }
@@ -146,12 +263,10 @@ export default function MatchDetail({ match, logos = {}, teamList = [] }) {
 
     load();
     return () => { abort = true; };
-  }, [match]);
+  }, [match, selectedMap, maps]);
 
   useEffect(() => {
-    if (match?.id === "demo-live") {
-      setScoreboard(DEMO_SCOREBOARD); // se muestra de inmediato
-    }
+    if (match?.id === "demo-live") setScoreboard(DEMO_SCOREBOARD);
   }, [match]);
 
   const Row = ({ p }) => {
@@ -167,7 +282,7 @@ export default function MatchDetail({ match, logos = {}, teamList = [] }) {
             )}
             <div className="flex flex-col leading-tight">
               <span className="font-medium">{p.name || "—"}</span>
-              {p.tag ? <span className="text-xs opacity-60">@{p.tag}</span> : null}
+              {p.tag ? <span className="text-xs opacity-60">{p.tag}</span> : null}
             </div>
           </div>
         </td>
@@ -180,71 +295,43 @@ export default function MatchDetail({ match, logos = {}, teamList = [] }) {
 
   return (
     <div className="mdetail w-full">
-      {/* Encabezado (mapa + estado + serie) */}
+      {/* Header */}
       <div className="flex flex-wrap items-center gap-2 mb-3">
-        {match?.currentMap ? (
-          <span className="inline-flex items-center rounded-full border border-white/10 px-3 py-1 text-xs uppercase tracking-wide">
-            MAP • {match.currentMap}
-          </span>
-        ) : null}
-        {match?.status ? (
-          <span className="inline-flex items-center rounded-full bg-white/5 px-3 py-1 text-xs uppercase tracking-wide">
-            {match.status}
-          </span>
-        ) : null}
         <span className="ml-auto text-xs opacity-75">
           Series: {wins1}-{wins2} (Bo{bo})
         </span>
       </div>
 
-      {/* Tabla CT/T/Total */}
-      <div className="overflow-x-auto mb-4">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left border-b border-white/10">
-              <th className="py-2 pr-2">Team</th>
-              <th className="py-2 pr-2 text-center">CT</th>
-              <th className="py-2 pr-2 text-center">T</th>
-              <th className="py-2 pr-2 text-center">Total</th>
-              <th className="py-2 pr-2 text-center">Series</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="border-b border-white/5">
-              <td className="py-3 pr-2">
-                <div className="flex items-center gap-2">
-                  {logo1 && <Image src={logo1} alt="" width={18} height={18} unoptimized className="opacity-80" />}
-                  <span className="font-medium">{t1?.name ?? "—"}</span>
-                </div>
-              </td>
-              <td className="py-3 pr-2 text-center">{t1ct}</td>
-              <td className="py-3 pr-2 text-center">{t1t}</td>
-              <td className="py-3 pr-2 text-center font-semibold">{tot1}</td>
-              <td className="py-3 pr-2 text-center">{wins1}</td>
-            </tr>
-            <tr>
-              <td className="py-3 pr-2">
-                <div className="flex items-center gap-2">
-                  {logo2 && <Image src={logo2} alt="" width={18} height={18} unoptimized className="opacity-80" />}
-                  <span className="font-medium">{t2?.name ?? "—"}</span>
-                </div>
-              </td>
-              <td className="py-3 pr-2 text-center">{t2ct}</td>
-              <td className="py-3 pr-2 text-center">{t2t}</td>
-              <td className="py-3 pr-2 text-center font-semibold">{tot2}</td>
-              <td className="py-3 pr-2 text-center">{wins2}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      {/* Map tabs */}
+      <MapTabs maps={maps} selected={selectedMap} onSelect={setSelectedMap} />
 
-      {/* Roster / scoreboard */}
+      {/* Timeline (scrollable) */}
+      {selectedMap !== "all" && (
+        <div className="mb-6 overflow-x-auto">
+          <div className="relative" style={{ width: Math.max(contentWidth, 560) }}>
+            {/* Header de números 1..N */}
+            <div className="flex items-center gap-2 mb-2">
+              <div className="shrink-0" style={{ width: LABEL_W }} />
+              <div className="flex items-center gap-1">
+                {Array.from({ length: roundsCount }, (_, i) => (
+                  <div key={`h-${i}`} className="w-[22px] h-[22px] grid place-items-center text-[10px] opacity-60">
+                    {i + 1}
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* Filas */}
+            <RoundRow arr={track.rowT1} logo={logo1} name={t1?.name} />
+            <div className="mt-2">
+              <RoundRow arr={track.rowT2} logo={logo2} name={t2?.name} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Scoreboard */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <div className="flex items-center gap-2 mb-2">
-            {logo1 && <Image src={logo1} alt="" width={18} height={18} unoptimized />}
-            <span className="text-sm font-semibold">{t1?.name ?? "—"}</span>
-          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -269,10 +356,6 @@ export default function MatchDetail({ match, logos = {}, teamList = [] }) {
         </div>
 
         <div>
-          <div className="flex items-center gap-2 mb-2">
-            {logo2 && <Image src={logo2} alt="" width={18} height={18} unoptimized />}
-            <span className="text-sm font-semibold">{t2?.name ?? "—"}</span>
-          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
