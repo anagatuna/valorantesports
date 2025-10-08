@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import AgentCard from "@/components/AgentCard";
 
 /* ===== Utils ===== */
 const norm = (s) => s?.toLowerCase().replace(/[\s\-_\.]+/g, "").trim();
@@ -20,58 +21,35 @@ function findLogo(name, map = {}, list = []) {
 }
 
 /* ===== Agents (local imgs) ===== */
-const AGENT_IMG = {
-  jett: "/agents/jett/jett-1.webp",
-  raze: "/agents/raze/raze-1.webp",
-  phoenix: "/agents/phoenix/phoenix-1.webp",
-  sage: "/agents/sage/sage-1.webp",
-  sova: "/agents/sova/sova-1.webp",
-  viper: "/agents/viper/viper-1.webp",
-  brimstone: "/agents/brimstone/brimstone-1.webp",
-  breach: "/agents/breach/breach-1.webp",
-  omen: "/agents/omen/omen-1.webp",
-  cypher: "/agents/cypher/cypher-1.webp",
-  killjoy: "/agents/killjoy/killjoy-1.webp",
-  skye: "/agents/skye/skye-1.webp",
-  yoru: "/agents/yoru/yoru-1.webp",
-  astra: "/agents/astra/astra-1.webp",
-  kayo: "/agents/kayo/kayo-1.webp",
-  chamber: "/agents/chamber/chamber-1.webp",
-  neon: "/agents/neon/neon-1.webp",
-  fade: "/agents/fade/fade-1.webp",
-  harbor: "/agents/harbor/harbor-1.webp",
-  gekko: "/agents/gekko/gekko-1.webp",
-  deadlock: "/agents/deadlock/deadlock-1.webp",
-  iso: "/agents/iso/iso-1.webp",
-  clove: "/agents/clove/clove-1.webp",
-};
 const AGENT_ALIAS = { "kay/o": "kayo", brim: "brimstone", harbour: "harbor" };
-function agentKey(s = "") {
+const agentKey = (s = "") => {
   const base = s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
   const key = base.replace(/[^a-z/]/g, "");
-  return AGENT_ALIAS[key] || key.replace("/", "");
-}
-function resolveAgentImg(name, apiImg) {
-  if (apiImg) return apiImg;
+  return (AGENT_ALIAS[key] || key).replace("/", "");
+};
+
+function resolveAgentPair(name = "", fallback1 = null) {
   const k = agentKey(name);
-  return AGENT_IMG[k] || null;
+  const cover = fallback1 || `/agents/${k}/${k}-1.webp`;
+  const character = cover.replace(/-1(\.\w+)$/i, "-2$1");
+  return { cover, character };
 }
 
 /* ===== Demo scoreboard fallback ===== */
 const DEMO_SCOREBOARD = {
   playersT1: [
-    { name: "Mixwell", tag: "g2", agent: "Jett", agentImg: AGENT_IMG.jett, acs: 265, k: 19, d: 15, a: 3, plusMinus: +4 },
-    { name: "AvovA", tag: "g2", agent: "Omen", agentImg: AGENT_IMG.omen, acs: 185, k: 13, d: 14, a: 5, plusMinus: -1 },
-    { name: "Nukkye", tag: "g2", agent: "Raze", agentImg: AGENT_IMG.raze, acs: 230, k: 17, d: 16, a: 2, plusMinus: +1 },
-    { name: "hoody", tag: "g2", agent: "Sage", agentImg: AGENT_IMG.sage, acs: 150, k: 9, d: 14, a: 7, plusMinus: -5 },
-    { name: "keloqz", tag: "g2", agent: "Sova", agentImg: AGENT_IMG.sova, acs: 200, k: 14, d: 12, a: 6, plusMinus: +2 },
+    { name: "Mixwell", tag: "g2", agent: "Jett", acs: 265, k: 19, d: 15, a: 3, plusMinus: +4 },
+    { name: "AvovA", tag: "g2", agent: "Omen", acs: 185, k: 13, d: 14, a: 5, plusMinus: -1 },
+    { name: "Nukkye", tag: "g2", agent: "Raze", acs: 230, k: 17, d: 16, a: 2, plusMinus: +1 },
+    { name: "hoody", tag: "g2", agent: "Sage", acs: 150, k: 9, d: 14, a: 7, plusMinus: -5 },
+    { name: "keloqz", tag: "g2", agent: "Sova", acs: 200, k: 14, d: 12, a: 6, plusMinus: +2 },
   ],
   playersT2: [
-    { name: "TenZ", tag: "sen", agent: "Jett", agentImg: AGENT_IMG.jett, acs: 290, k: 22, d: 15, a: 3, plusMinus: +7 },
-    { name: "Zekken", tag: "sen", agent: "Raze", agentImg: AGENT_IMG.raze, acs: 210, k: 15, d: 14, a: 4, plusMinus: +1 },
-    { name: "Sacy", tag: "sen", agent: "Sova", agentImg: AGENT_IMG.sova, acs: 170, k: 11, d: 13, a: 8, plusMinus: -2 },
-    { name: "Zellsis", tag: "sen", agent: "Viper", agentImg: AGENT_IMG.viper, acs: 195, k: 14, d: 12, a: 6, plusMinus: +2 },
-    { name: "johnqt", tag: "sen", agent: "Killjoy", agentImg: AGENT_IMG.killjoy, acs: 160, k: 10, d: 13, a: 7, plusMinus: -3 },
+    { name: "TenZ", tag: "sen", agent: "Jett", acs: 290, k: 22, d: 15, a: 3, plusMinus: +7 },
+    { name: "Zekken", tag: "sen", agent: "Raze", acs: 210, k: 15, d: 14, a: 4, plusMinus: +1 },
+    { name: "Sacy", tag: "sen", agent: "Sova", acs: 170, k: 11, d: 13, a: 8, plusMinus: -2 },
+    { name: "Zellsis", tag: "sen", agent: "Viper", acs: 195, k: 14, d: 12, a: 6, plusMinus: +2 },
+    { name: "johnqt", tag: "sen", agent: "Killjoy", acs: 160, k: 10, d: 13, a: 7, plusMinus: -3 },
   ],
   mapIndex: 1,
 };
@@ -152,7 +130,7 @@ const RoundBubble = ({ type }) => {
   const cls =
     type === "win" ? "bg-emerald-500/80"
       : type === "loss" ? "bg-rose-500/80"
-      : "bg-white/10";
+        : "bg-white/10";
   return <div className={`w-[22px] h-[22px] rounded-sm ${cls}`} />;
 };
 
@@ -210,9 +188,9 @@ export default function MatchDetail({ match, logos = {}, teamList = [] }) {
   const bo = Number(match?.series?.bestOf ?? 3);
 
   const t1ct = safe(match?.rounds?.t1ct);
-  const t1t  = safe(match?.rounds?.t1t);
+  const t1t = safe(match?.rounds?.t1t);
   const t2ct = safe(match?.rounds?.t2ct);
-  const t2t  = safe(match?.rounds?.t2t);
+  const t2t = safe(match?.rounds?.t2t);
 
   /* Map selector */
   const maps = useMemo(() => normalizeMapsFromMatch(match), [match]);
@@ -270,18 +248,20 @@ export default function MatchDetail({ match, logos = {}, teamList = [] }) {
   }, [match]);
 
   const Row = ({ p }) => {
-    const agentImg = resolveAgentImg(p.agent, p.agentImg);
+    const { cover, character } = resolveAgentPair(p.agent, p.agentImg);
     return (
-      <tr className="border-b border-white/5">
-        <td className="py-2 pr-2">
-          <div className="flex items-center gap-2">
-            {agentImg ? (
-              <Image src={agentImg} alt={p.agent || ""} width={20} height={20} unoptimized />
-            ) : (
-              <span className="inline-block w-5 h-5 rounded bg-white/10" />
-            )}
-            <div className="flex flex-col leading-tight">
+      <tr className="border-b border-white/5 align-top">
+        <td className="py-2 pr-2 w-[120px]">
+          <div className="flex items-start gap-3">
+            <AgentCard
+              coverSrc={cover}
+              charSrc={character}
+              size="sm"            // compacto
+              className="agent-card--table"
+            />
+            <div className="flex flex-col leading-tight mt-1">
               <span className="font-medium">{p.name || "—"}</span>
+              <span className="text-xs opacity-70 mt-1">{p.agent}</span>
               {p.tag ? <span className="text-xs opacity-60">{p.tag}</span> : null}
             </div>
           </div>

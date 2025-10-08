@@ -1450,3 +1450,197 @@ main {
   font-weight: 600;
   opacity: .85;
 }
+
+/* ===== Agent Card base ===== */
+.agent-card {
+  /* ——— TAMAÑO (ajustable) ——— */
+  --w: 56px;
+  /* ancho */
+  --h: 56px;
+  /* alto */
+
+  /* ——— ANIMACIÓN (ajustable) ——— */
+  --lift: 10px;
+  /* cuánto sube la portada al hover */
+  --tilt: 16deg;
+  /* inclinación */
+  --pop: 12%;
+  /* cuánto sube el personaje */
+  --dur: 360ms;
+  /* duración animaciones */
+  --ease: cubic-bezier(.22, .61, .36, 1);
+  /* easing suave */
+
+  position: relative;
+  width: var(--w);
+  height: var(--h);
+  perspective: 1600px;
+  isolation: isolate;
+  user-select: none;
+}
+
+/* marco / clip */
+.agent-card__frame {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, .12);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .1);
+}
+
+/* portada */
+.agent-card__cover {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  will-change: transform;
+}
+
+.agent-card__cover img {
+  object-fit: cover;
+}
+
+/* velos */
+.agent-card__veil-top,
+.agent-card__veil-bottom {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease), height var(--dur) var(--ease);
+}
+
+.agent-card__veil-top {
+  top: 0;
+  bottom: 0;
+  background-image: linear-gradient(to top, transparent 46%, rgba(0, 0, 0, .45) 68%, rgba(0, 0, 0, .85) 97%);
+}
+
+.agent-card__veil-bottom {
+  bottom: 0;
+  height: 56px;
+  opacity: 1;
+  background-image: linear-gradient(to bottom, transparent 46%, rgba(0, 0, 0, .45) 68%, rgba(0, 0, 0, .85) 97%);
+}
+
+/* etiqueta */
+.agent-card__label {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  font-size: 10px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, .8);
+  transform: translateZ(0);
+  transition: transform var(--dur) var(--ease);
+}
+
+/* personaje */
+.agent-card__character {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0;
+  transform: translate3d(0, 0, 0);
+  transition: transform var(--dur) var(--ease), opacity var(--dur) var(--ease);
+  will-change: transform, opacity;
+}
+
+.agent-card__character img {
+  filter: drop-shadow(0 10px 16px rgba(0, 0, 0, .35));
+}
+
+/* Hover: tilt + velos + personaje suave */
+.agent-card:hover {
+  filter: drop-shadow(0 10px 14px rgba(0, 0, 0, .35));
+}
+
+.agent-card:hover .agent-card__cover {
+  transform: perspective(900px) translateY(calc(-1 * var(--lift))) rotateX(var(--tilt));
+}
+
+.agent-card:hover .agent-card__veil-top {
+  opacity: 1;
+}
+
+.agent-card:hover .agent-card__veil-bottom {
+  opacity: 1;
+  height: 64px;
+}
+
+.agent-card:hover .agent-card__label {
+  transform: translate3d(0, -8px, 80px);
+}
+
+.agent-card:hover .agent-card__character {
+  opacity: 1;
+  transform: translate3d(0, calc(-1 * var(--pop)), 90px);
+}
+
+/* Reduced motion: sin tilt/pop, aún bonito */
+@media (prefers-reduced-motion: reduce) {
+
+  .agent-card:hover .agent-card__cover,
+  .agent-card:hover .agent-card__label,
+  .agent-card:hover .agent-card__character {
+    transform: none !important;
+  }
+
+  .agent-card__veil-top,
+  .agent-card__veil-bottom {
+    transition: none;
+  }
+}
+
+/* === Preset: tabla compacta === */
+.agent-card--table {
+  /* tamaño ideal para filas ~56–68px de alto */
+  --w: 50px;
+  /* ancho */
+  --h: 50px;
+  /* alto (2:3) */
+  --lift: 8px;
+  /* levanta menos para no romper la fila */
+  --tilt: 14deg;
+  /* tilt más discreto */
+  --pop: 10%;
+  /* subida del personaje */
+  --dur: 420ms;
+  /* transición un poco más larga = más smooth */
+  --ease: cubic-bezier(.16, .84, .24, 1);
+
+  /* si tu tabla tiene fondo claro, baja la sombra */
+  filter: drop-shadow(0 6px 5px rgba(0, 0, 0, .25));
+}
+
+/* Veilos adaptados al tamaño del card (en lugar de fijos) */
+.agent-card--table .agent-card__veil-bottom {
+  height: calc(var(--h) * 0.28);
+  /* ~27px con 96px de alto */
+}
+
+.agent-card--table:hover .agent-card__veil-bottom {
+  height: calc(var(--h) * 0.35);
+  /* ~34px */
+}
+
+/* Etiqueta discreta o invisible en tabla (elige una) */
+.agent-card--table .agent-card__label {
+  font-size: 9px;
+  letter-spacing: .05em;
+  opacity: .7;
+  transform: translateZ(0);
+}
+
+/* si prefieres sin texto: */
+/* .agent-card--table .agent-card__label{ display:none; } */
+
+/* Micro-ajuste de sombra al hover para no exagerar */
+.agent-card--table:hover {
+  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, .28));
+}
