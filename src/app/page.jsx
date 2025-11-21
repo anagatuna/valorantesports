@@ -20,7 +20,7 @@ const normalizeCollection = (coll) => ({ items: (coll?.items || []).map(normaliz
 
 export default async function HomePage() {
   const { today, next } = await getUpcomingTodayAndNextFromVlrgg();
-  const completed = await getCompletedTodayOrPrevFromVlrgg(50); // ← usa results
+  const completed = await getCompletedTodayOrPrevFromVlrgg(50);
 
   const normToday = normalizeCollection(today);
   const normNext = normalizeCollection(next);

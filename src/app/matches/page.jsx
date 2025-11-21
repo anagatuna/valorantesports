@@ -23,7 +23,7 @@ export default async function HomePage() {
 
   const normToday = normalizeCollection(today);
   const normNext = normalizeCollection(next);
-  
+
   return (
     <main className="max-w-7xl mx-auto px-6 py-10">
       <HomeMatches today={normToday} next={normNext} />

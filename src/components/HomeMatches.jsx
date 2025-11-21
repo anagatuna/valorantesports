@@ -673,6 +673,10 @@ export default function HomeMatches({ today, next, completed }) {
   const [teamList, setTeamList] = useState([]);
   const [openId, setOpenId] = useState(null);
 
+  const hasUpcoming = Boolean(today || next);      // estamos en main o matches
+  const hasCompleted = Boolean(completed);         // estamos en main o results
+  const limitToEight = hasUpcoming && hasCompleted; // solo en main
+
   // Demo LIVE (puedes quitarlo si no lo quieres)
   const demoLiveMatch = useMemo(() => {
     const currentMap = "icebox";
@@ -693,19 +697,30 @@ export default function HomeMatches({ today, next, completed }) {
   }, []);
 
   const baseUpcoming = useMemo(() => {
+    if (!hasUpcoming) return [];
+
     const a = (today?.items || []).map(normalizeMatch);
     const b = (next?.items || []).map(normalizeMatch);
-    return [demoLiveMatch, ...a, ...b].slice(0, 8).map(decorateWithLocalMapAndSeries);
-  }, [today, next, demoLiveMatch]);
+
+    let list = [demoLiveMatch, ...a, ...b].map(decorateWithLocalMapAndSeries);
+
+    if (limitToEight) {
+      list = list.slice(0, 8);
+    }
+
+    return list;
+  }, [today, next, demoLiveMatch, hasUpcoming, limitToEight]);
 
   const baseCompleted = useMemo(() => {
+    if (!hasCompleted) return [];
+
     const c = (completed?.items || [])
-      .map(mapCompletedItem)   // <-- normaliza primero
-      .map(normalizeMatch)     // <-- conserva todo + event
+      .map(mapCompletedItem)
+      .map(normalizeMatch)
       .map(decorateWithLocalMapAndSeries);
 
-    return c.slice(0, 8);
-  }, [completed]);
+    return limitToEight ? c.slice(0, 8) : c;
+  }, [completed, hasCompleted, limitToEight]);
 
   const [upcoming, setUpcoming] = useState(baseUpcoming);
   const [completedList, setCompletedList] = useState(baseCompleted);
@@ -845,87 +860,92 @@ export default function HomeMatches({ today, next, completed }) {
   return (
     <div className="home-matches">
       {/* Upcoming */}
-      <section className="block">
-        <div className="block__head">
-          <h2 className="block__title text-3xl font-bold mb-10">Upcoming matches</h2>
-        </div>
-        {upcoming.length ? (
-          // HomeMatches.jsx (dentro del render de Upcoming)
-          <div className="match-list">
-            {upcoming.map((m) => {
-              const uid =
-                m.uid ??
-                m.id ??
-                `${m.startTs || "ts"}|${m.teams?.[0]?.name || "t1"}|${m.teams?.[1]?.name || "t2"}`;
+      {hasUpcoming && (
 
-              const isOpen = openId === uid;
 
-              return (
-                <div key={`u-${uid}`} className={`match-stack ${isOpen ? "is-open" : ""}`}>
-                  <ScheduleCard
-                    match={m}
-                    logos={logoMap}
-                    teamList={teamList}
-                    expanded={isOpen}
-                    onToggle={() => setOpenId(isOpen ? null : uid)}
-                  />
+        <section className="block">
+          <div className="block__head">
+            <h2 className="block__title text-3xl font-bold mb-10">Upcoming matches</h2>
+          </div>
+          {upcoming.length ? (
+            // HomeMatches.jsx (dentro del render de Upcoming)
+            <div className="match-list">
+              {upcoming.map((m) => {
+                const uid =
+                  m.uid ??
+                  m.id ??
+                  `${m.startTs || "ts"}|${m.teams?.[0]?.name || "t1"}|${m.teams?.[1]?.name || "t2"}`;
 
-                  <div className="sched-anim">
-                    <div className="sched-detail-row">
-                      <div className="sched-detail-inner">
-                        <MatchDetail match={m} logos={logoMap} teamList={teamList} />
+                const isOpen = openId === uid;
+
+                return (
+                  <div key={`u-${uid}`} className={`match-stack ${isOpen ? "is-open" : ""}`}>
+                    <ScheduleCard
+                      match={m}
+                      logos={logoMap}
+                      teamList={teamList}
+                      expanded={isOpen}
+                      onToggle={() => setOpenId(isOpen ? null : uid)}
+                    />
+
+                    <div className="sched-anim">
+                      <div className="sched-detail-row">
+                        <div className="sched-detail-inner">
+                          <MatchDetail match={m} logos={logoMap} teamList={teamList} />
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="block__empty">No hay partidos próximos.</p>
-        )}
-      </section>
-
+                );
+              })}
+            </div>
+          ) : (
+            <p className="block__empty">No hay partidos próximos.</p>
+          )}
+        </section>
+      )}
       {/* Completed */}
-      <section className="block">
-        <div className="block__head">
-          <h2 className="block__title text-3xl font-bold mb-10">Completed matches</h2>
-        </div>
-        {completedList.length ? (
-          <div className="match-list">
-            {completedList.map((m) => {
-              const uid =
-                m.uid ??
-                m.id ??
-                `${m.startTs || "ts"}|${m.teams?.[0]?.name || "t1"}|${m.teams?.[1]?.name || "t2"}`;
+      {hasCompleted && (
+        <section className="block">
+          <div className="block__head">
+            <h2 className="block__title text-3xl font-bold mb-10">Completed matches</h2>
+          </div>
+          {completedList.length ? (
+            <div className="match-list">
+              {completedList.map((m) => {
+                const uid =
+                  m.uid ??
+                  m.id ??
+                  `${m.startTs || "ts"}|${m.teams?.[0]?.name || "t1"}|${m.teams?.[1]?.name || "t2"}`;
 
-              const isOpen = openId === uid;
+                const isOpen = openId === uid;
 
-              return (
-                <div key={`u-${uid}`} className={`match-stack ${isOpen ? "is-open" : ""}`}>
-                  <ScheduleCard
-                    match={m}
-                    logos={logoMap}
-                    teamList={teamList}
-                    expanded={isOpen}
-                    onToggle={() => setOpenId(isOpen ? null : uid)}
-                  />
+                return (
+                  <div key={`u-${uid}`} className={`match-stack ${isOpen ? "is-open" : ""}`}>
+                    <ScheduleCard
+                      match={m}
+                      logos={logoMap}
+                      teamList={teamList}
+                      expanded={isOpen}
+                      onToggle={() => setOpenId(isOpen ? null : uid)}
+                    />
 
-                  <div className="sched-anim">
-                    <div className="sched-detail-row">
-                      <div className="sched-detail-inner">
-                        <MatchDetail match={m} logos={logoMap} teamList={teamList} />
+                    <div className="sched-anim">
+                      <div className="sched-detail-row">
+                        <div className="sched-detail-inner">
+                          <MatchDetail match={m} logos={logoMap} teamList={teamList} />
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="block__empty">No hay resultados disponibles.</p>
-        )}
-      </section>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="block__empty">No hay resultados disponibles.</p>
+          )}
+        </section>
+      )}
     </div>
   );
 }
