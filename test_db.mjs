@@ -6,19 +6,18 @@ const supabaseUrl = process.env.SUPABASE_URL
 const supabaseKey = process.env.SUPABASE_KEY
 const supabase = createClient(supabaseUrl, supabaseKey)
 
-// Usaremos la final del Champions (EDG vs Heretics) que tiene muchos datos
+// ID de la partida (Puedes cambiar esto por la que quieras probar)
 const MATCH_ID = '353174'; 
 
-async function clonarCompleto() {
-    console.log("🔥 Iniciando Scraping PRO (Score + Stats)...");
+async function clonarReparado() {
+    console.log("🚑 Iniciando Script de Reparación (Score y Deaths)...");
 
     try {
         const url = `https://www.vlr.gg/${MATCH_ID}`;
         
-        // Headers para parecer un humano real
         const response = await fetch(url, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'
             }
         });
 
@@ -26,41 +25,45 @@ async function clonarCompleto() {
         const html = await response.text();
         const $ = cheerio.load(html);
 
-        // --- 1. DATOS GENERALES ---
-        // Usamos selectores más específicos para evitar errores
+        // --- 1. ARREGLO DEL SCORE (NULL) ---
         const teamA = $('.match-header-link-name').eq(0).text().trim();
         const teamB = $('.match-header-link-name').eq(1).text().trim();
         
-        // Limpieza del marcador (para evitar el NULL)
-        const scoreText = $('.match-header-vs-score').text().replace(/\s/g, '').trim(); // Quitamos espacios extra
-        const scores = scoreText.split(':');
-        
-        // Si no encuentra números, ponemos 0 para que no rompa la DB
-        const scoreA = scores[0] ? parseInt(scores[0]) : 0;
-        const scoreB = scores[1] ? parseInt(scores[1]) : 0;
+        // TRUCO: En lugar de split(':'), buscamos cualquier número que aparezca en el texto
+        const scoreRaw = $('.match-header-vs-score').text();
+        const scoreNumbers = scoreRaw.match(/(\d+)/g); // Esto devuelve un array ej: ["3", "2"]
 
-        console.log(`✅ PARTIDA: ${teamA} [${scoreA}-${scoreB}] ${teamB}`);
+        // Si encontró números, los usamos. Si no, 0.
+        const scoreA = scoreNumbers ? parseInt(scoreNumbers[0]) : 0;
+        const scoreB = scoreNumbers ? parseInt(scoreNumbers[1]) : 0;
 
-        // --- 2. EXTRAER JUGADORES (Kills + Agentes) ---
+        console.log(`✅ MARCADOR DETECTADO: ${teamA} [${scoreA}-${scoreB}] ${teamB}`);
+
+        // --- 2. ARREGLO DE LAS DEATHS (0) ---
         const playersData = [];
-        
-        // Buscamos la tabla "Overview"
         const statsTable = $('.vm-stats-game[data-game-id="all"] table');
 
         statsTable.find('tbody tr').each((i, row) => {
             const name = $(row).find('.text-of').text().trim();
-            // Los primeros 5 jugadores son del equipo A, los siguientes 5 del B
             const team = i < 5 ? teamA : teamB; 
 
-            // Buscar imagen del agente
+            // Imagen del agente
             let agentSrc = $(row).find('td.mod-agents img').attr('src');
             if (agentSrc && !agentSrc.startsWith('http')) agentSrc = 'https://www.vlr.gg' + agentSrc;
 
-            // Stats (K/D/A están en posiciones fijas)
-            // K=columna 4, D=columna 5, A=columna 6 (aprox, usamos indices de mod-stat)
-            const k = $(row).find('td.mod-stat').eq(2).text().trim(); 
-            const d = $(row).find('td.mod-stat').eq(3).text().trim(); 
-            const a = $(row).find('td.mod-stat').eq(4).text().trim(); 
+            // --- AQUÍ ESTABA EL ERROR DE LAS DEATHS ---
+            // VLR tiene muchas columnas. Vamos a contar todas las celdas (td)
+            // Estructura usual: [0]Nombre [1]Agente [2]Rating [3]ACS [4]Kills [5]Deaths [6]Assists
+            
+            const cols = $(row).find('td'); // Obtenemos todas las celdas de la fila
+            
+            // Usamos índices directos que son más seguros
+            const k = $(cols).eq(4).text().trim(); // Columna 5
+            const d = $(cols).eq(5).text().trim(); // Columna 6 (Deaths)
+            const a = $(cols).eq(6).text().trim(); // Columna 7
+            
+            // Verificamos si son números (a veces tienen parentesis), limpiamos
+            const cleanNum = (str) => parseInt(str.replace(/\D/g, '')) || 0;
 
             if (name) {
                 playersData.push({
@@ -68,18 +71,18 @@ async function clonarCompleto() {
                     player_name: name,
                     team_name: team,
                     agent_img: agentSrc || 'N/A',
-                    k: parseInt(k) || 0,
-                    d: parseInt(d) || 0,
-                    a: parseInt(a) || 0
+                    k: cleanNum(k),
+                    d: cleanNum(d), // Ahora debería leer el número correcto
+                    a: cleanNum(a)
                 });
             }
         });
 
-        console.log(`📊 Jugadores encontrados: ${playersData.length}`);
+        console.log(`📊 Jugadores procesados: ${playersData.length}`);
 
-        // --- 3. GUARDAR EN SUPABASE ---
+        // --- 3. GUARDAR ---
         
-        // A. Guardar/Actualizar la Partida
+        // Guardamos Match con el Score corregido
         await supabase.from('matches').upsert({
             id: MATCH_ID,
             team_a: teamA,
@@ -90,19 +93,18 @@ async function clonarCompleto() {
             last_update: new Date()
         });
 
-        // B. Guardar Stats (Borrar viejos -> Insertar nuevos)
-        // Esto evita que se dupliquen si corres el script 2 veces
+        // Borramos stats viejos (los que tenían 0 deaths) e insertamos los nuevos
         await supabase.from('match_stats').delete().eq('match_id', MATCH_ID);
         
         const { error } = await supabase.from('match_stats').insert(playersData);
 
-        if (error) console.error("❌ Error guardando stats:", error.message);
-        else console.log("🎉 ¡ÉXITO! Stats completas guardadas en Supabase.");
+        if (error) console.error("❌ Error Supabase:", error.message);
+        else console.log("🎉 ¡DATOS CORREGIDOS! Revisa Supabase ahora.");
 
     } catch (err) {
-        console.error("❌ Fallo crítico:", err.message);
+        console.error("❌ Fallo:", err.message);
         process.exit(1);
     }
 }
 
-clonarCompleto();
+clonarReparado();
