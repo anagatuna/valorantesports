@@ -1,0 +1,27 @@
+name: Clonador de Valorant
+
+on:
+  workflow_dispatch: # Esto permite que le des un botón de "Run" manual
+  schedule:
+    - cron: '*/30 * * * *' # Esto hará que se ejecute automáticamente cada 30 min
+
+jobs:
+  scrape-vlr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v3
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Ejecutar Script
+        env: 
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: node test_db.mjs
