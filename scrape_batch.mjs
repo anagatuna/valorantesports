@@ -5,6 +5,7 @@ const supabaseUrl = process.env.SUPABASE_URL
 const supabaseKey = process.env.SUPABASE_KEY
 const supabase = createClient(supabaseUrl, supabaseKey)
 
+// --- CONFIGURACIÓN ---
 const API_SOURCE = 'https://vlr.orlandomm.net/api/v1/results'; 
 const DELAY_MS = 5000; 
 const MAX_MATCHES = 10; 
@@ -38,58 +39,82 @@ async function scrapearPartido(matchId) {
         // --- 1. SCORE GENERAL ---
         const teamA = cleanText($('.match-header-link-name').eq(0).text());
         const teamB = cleanText($('.match-header-link-name').eq(1).text());
-        const headerScoreText = $('.match-header-vs-score').text().trim(); 
-        const scoreMatch = headerScoreText.match(/(\d+)[:\-\s]+(\d+)/);
         
         let scoreA = 0, scoreB = 0;
+        
+        // Intento 1: Score Header
+        const headerScoreText = $('.match-header-vs-score').text().trim(); 
+        const scoreMatch = headerScoreText.match(/(\d+)[:\-\s]+(\d+)/);
         if (scoreMatch) {
             scoreA = parseInt(scoreMatch[1]);
             scoreB = parseInt(scoreMatch[2]);
         } else {
+            // Intento 2: Contar mapas ganados
             scoreA = $('.match-header-link.mod-1 .wf-score-point.mod-win').length;
             scoreB = $('.match-header-link.mod-2 .wf-score-point.mod-win').length;
         }
 
         console.log(`   ✅ MATCH: ${teamA} [${scoreA}-${scoreB}] ${teamB}`);
 
-        // --- 2. DETECTAR TODAS LAS PESTAÑAS DE MAPAS ---
-        // VLR tiene pestañas: "All Maps", "Map 1", "Map 2". 
-        // Cada una tiene un 'data-game-id' que conecta con una tabla oculta.
-        
+        // --- 2. DETECTAR PESTAÑAS (ESTRATEGIA BLINDADA) ---
         const mapTabs = [];
-        $('.vm-stats-games-nav-item').each((i, el) => {
-            const id = $(el).attr('data-game-id');
-            let nameRaw = cleanText($(el).text());
-            
-            // Limpiamos el nombre (ej: "1 Haven" -> "Haven")
-            // Si tiene números al inicio, los quitamos, a menos que sea el score
-            let cleanName = nameRaw.replace(/^\d+\s+/, '').trim(); 
-            
-            // Si contiene "All Maps" lo estandarizamos
-            if (cleanName.toLowerCase().includes('all')) cleanName = 'All Maps';
-            
-            // Quitamos el score si viene pegado (ej "Haven 13-5") para dejar solo "Haven"
-            const nameOnly = cleanName.split(/\d+[:\-]\d+/)[0].trim();
+        
+        // Estrategia A: Selector Clásico
+        let navItems = $('.vm-stats-games-nav-item');
+        
+        // Estrategia B: Selector Funcional (Si A falla)
+        if (navItems.length === 0) {
+            navItems = $('.js-map-switch');
+        }
 
-            mapTabs.push({
-                id: id,
-                rawName: cleanName, // Nombre completo con score (para la tabla match_maps)
-                cleanName: nameOnly || cleanName // Nombre corto (para match_stats)
+        if (navItems.length > 0) {
+            navItems.each((i, el) => {
+                const id = $(el).attr('data-game-id');
+                let nameRaw = cleanText($(el).text());
+                
+                // Limpieza de nombre
+                let cleanName = nameRaw.replace(/^\d+\s+/, '').trim(); 
+                if (cleanName.toLowerCase().includes('all') || cleanName.toLowerCase().includes('overview')) {
+                    cleanName = 'All Maps';
+                }
+                
+                // Quitar score del nombre (ej "Haven 13-5" -> "Haven")
+                const nameOnly = cleanName.split(/\d+[:\-]\d+/)[0].trim();
+
+                mapTabs.push({
+                    id: id,
+                    rawName: cleanName,
+                    cleanName: nameOnly || cleanName
+                });
             });
-        });
+            console.log(`   📂 Pestañas encontradas: ${mapTabs.length} (${mapTabs.map(m=>m.cleanName).join(', ')})`);
+        } else {
+            // ESTRATEGIA C: EMERGENCIA (No hay pestañas)
+            // Asumimos que es un Bo1 y buscamos la única tabla visible o "all"
+            console.warn("   ⚠️ No se encontraron pestañas. Activando modo emergencia.");
+            mapTabs.push({
+                id: 'all',
+                rawName: 'All Maps',
+                cleanName: 'All Maps'
+            });
+        }
 
-        console.log(`   📂 Pestañas detectadas: ${mapTabs.map(m => m.cleanName).join(', ')}`);
-
-        // --- 3. RECORRER CADA MAPA Y SCRAPEAR SU TABLA ---
+        // --- 3. RECORRER CADA MAPA ---
         const allStats = [];
-        const mapsInfo = []; // Para guardar resultados de mapas (13-5, etc)
+        const mapsInfo = [];
 
         for (const map of mapTabs) {
             // Buscamos la tabla que corresponde a ESTE mapa
-            const table = $(`.vm-stats-game[data-game-id="${map.id}"] table`);
+            let table = $(`.vm-stats-game[data-game-id="${map.id}"] table`);
+            
+            // Si falló el selector por ID, y solo hay 1 mapa en nuestra lista, agarramos la primera tabla visible
+            if (table.length === 0 && mapTabs.length === 1) {
+                table = $('.vm-stats-game table').first();
+            }
+
             if (table.length === 0) continue;
 
-            // Extraer Score del mapa para guardarlo en match_maps
+            // Extraer Score del mapa para match_maps (Solo si no es All Maps)
             const scoreExtract = map.rawName.match(/(\d+)[:\-\s]+(\d+)/);
             if (scoreExtract && map.cleanName !== 'All Maps') {
                 mapsInfo.push({
@@ -131,28 +156,30 @@ async function scrapearPartido(matchId) {
                     k: getVal(idxK),
                     d: getVal(idxD),
                     a: getVal(idxA),
-                    map_name: map.cleanName // <--- AQUÍ LA CLAVE: Guardamos el mapa
+                    map_name: map.cleanName
                 });
             });
         }
 
         // --- 4. GUARDAR EN SUPABASE ---
         if (allStats.length > 0) {
-            // A. Match General
+            // A. Match
             await supabase.from('matches').upsert({
                 id: matchId, team_a: teamA, team_b: teamB, score_a: scoreA, score_b: scoreB, status: 'COMPLETED', last_update: new Date()
             });
 
-            // B. Mapas (Resultados)
+            // B. Mapas
             await supabase.from('match_maps').delete().eq('match_id', matchId);
             if (mapsInfo.length > 0) await supabase.from('match_maps').insert(mapsInfo);
 
-            // C. Stats (Jugadores por mapa)
+            // C. Stats
             await supabase.from('match_stats').delete().eq('match_id', matchId);
             const { error } = await supabase.from('match_stats').insert(allStats);
 
-            if (!error) console.log(`   💾 Guardados ${allStats.length} registros de stats.`);
+            if (!error) console.log(`   💾 Stats guardados: ${allStats.length} registros.`);
             else console.error("   ❌ Error Stats:", error.message);
+        } else {
+            console.warn("   ⚠️ No se pudieron extraer jugadores de ninguna tabla.");
         }
 
     } catch (err) {
