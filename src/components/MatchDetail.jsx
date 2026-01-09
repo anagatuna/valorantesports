@@ -45,7 +45,6 @@ export default function MatchDetail({ match }) {
   const [mapsResults, setMapsResults] = useState([]); 
   const [loading, setLoading] = useState(false);
 
-  // Score Global
   const wins1 = safe(match?.score1 ?? match?.series?.wins1 ?? match?.teams?.[0]?.score);
   const wins2 = safe(match?.score2 ?? match?.series?.wins2 ?? match?.teams?.[1]?.score);
 
@@ -64,14 +63,11 @@ export default function MatchDetail({ match }) {
         if (statsRes.data && statsRes.data.length > 0) {
             setAllStats(statsRes.data);
             
-            // Mapas únicos en los stats
+            // Ordenar mapas: All Maps primero
             let uniqueMaps = [...new Set(statsRes.data.map(s => s.map_name))];
-            
-            // Lógica de ordenamiento: All Maps primero
             uniqueMaps.sort((a, b) => (a === 'All Maps' ? -1 : b === 'All Maps' ? 1 : 0));
             
             setAvailableMaps(uniqueMaps);
-            // Default: All Maps si existe, sino el único mapa que haya
             setSelectedMap(uniqueMaps[0]);
         }
         setLoading(false);
@@ -83,11 +79,7 @@ export default function MatchDetail({ match }) {
       if (allStats.length === 0 || !selectedMap) return { playersT1: [], playersT2: [] };
       const filtered = allStats.filter(s => s.map_name === selectedMap);
       
-      // Asegurar separación correcta de equipos
-      // A veces el orden en DB no es secuencial, mejor agrupar por team_name
-      // Usamos los nombres de equipo del match prop como referencia si coinciden, sino los de la DB
       const teamsInDb = [...new Set(filtered.map(s => s.team_name))];
-      // Intentar emparejar con t1/t2
       let teamAName = teamsInDb.find(dbName => dbName?.includes(t1.name)) || teamsInDb[0];
       let teamBName = teamsInDb.find(n => n !== teamAName);
 
@@ -138,7 +130,7 @@ export default function MatchDetail({ match }) {
   return (
     <div className="w-full bg-[#111] p-5 rounded-xl border border-white/5 mt-4 shadow-xl">
       
-      {/* HEADER: Score */}
+      {/* HEADER */}
       <div className="flex flex-col gap-4 mb-4 border-b border-white/10 pb-4">
         <div className="flex justify-between items-center">
             {/* T1 */}
@@ -148,7 +140,7 @@ export default function MatchDetail({ match }) {
                     <div className="flex justify-end mt-2 opacity-80"><SeriesDiamonds wins={wins1} side="right" /></div>
                 </div>
             </div>
-            {/* Score Central */}
+            {/* Score */}
             <div className="px-8 flex flex-col items-center">
                 <div className="text-4xl font-black tracking-widest text-white flex items-center gap-3">
                     <span className={wins1 > wins2 ? "text-accent" : "text-white"}>{wins1}</span>
@@ -166,24 +158,32 @@ export default function MatchDetail({ match }) {
             </div>
         </div>
 
-        {/* CHIPS DE RESULTADOS DE MAPAS (SOLO SI HAY) */}
+        {/* MAP CHIPS CON RONDAS */}
         {mapsResults.length > 0 && (
             <div className="flex justify-center flex-wrap gap-2">
                 {mapsResults.map((m, i) => (
-                    <div key={i} className="px-3 py-1 rounded bg-white/5 border border-white/5 text-xs flex items-center gap-2">
+                    <div key={i} className="px-3 py-1 rounded bg-white/5 border border-white/5 text-xs flex items-center gap-3">
                         <span className="text-gray-400 uppercase font-bold">{m.map_name}</span>
-                        <span className="font-mono text-white">
+                        <div className="font-mono text-white flex gap-1">
                             <span className={m.score_a > m.score_b ? "text-accent" : ""}>{m.score_a}</span>
-                            <span className="text-gray-600 mx-1">:</span>
+                            <span className="text-gray-600">:</span>
                             <span className={m.score_b > m.score_a ? "text-accent" : ""}>{m.score_b}</span>
-                        </span>
+                        </div>
+                        {/* Detalle de Rondas (ATK/DEF) */}
+                        {(m.t1_t > 0 || m.t1_ct > 0) && (
+                            <div className="text-[10px] text-gray-500 flex gap-2 border-l border-white/10 pl-2">
+                                <span>CT:{m.t1_ct}/T:{m.t1_t}</span>
+                                <span>vs</span>
+                                <span>CT:{m.t2_ct}/T:{m.t2_t}</span>
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>
         )}
       </div>
 
-      {/* --- SELECTOR DE PESTAÑAS (Oculto si es Bo1 o solo hay 1 opcion) --- */}
+      {/* SELECTOR */}
       {availableMaps.length > 1 && (
         <div className="flex gap-2 mb-6 overflow-x-auto pb-2 border-b border-white/5 scrollbar-thin scrollbar-thumb-white/10">
             {availableMaps.map(mapName => (
@@ -201,8 +201,9 @@ export default function MatchDetail({ match }) {
         </div>
       )}
 
-      {/* --- TABLAS --- */}
+      {/* TABLAS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
+        {/* Tabla T1 */}
         <div>
           <h3 className="text-xs font-bold text-accent uppercase tracking-wider mb-2 flex justify-between">
             <span>{t1.name}</span>
@@ -223,6 +224,7 @@ export default function MatchDetail({ match }) {
             </tbody>
           </table>
         </div>
+        {/* Tabla T2 */}
         <div>
           <h3 className="text-xs font-bold text-accent uppercase tracking-wider lg:text-right mb-2 w-full flex justify-between lg:justify-end gap-4">
             <span className="lg:order-2">{t2.name}</span>

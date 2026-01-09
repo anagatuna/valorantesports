@@ -10,27 +10,12 @@ const API_SOURCE = 'https://vlr.orlandomm.net/api/v1/results';
 const MAX_MATCHES = 50; 
 const DELAY_MS = 2000; 
 
-// Lista maestra de mapas para búsqueda por fuerza bruta
-const KNOWN_MAPS = [
-    "Abyss", "Ascent", "Bind", "Breeze", "Fracture", "Haven", 
-    "Icebox", "Lotus", "Pearl", "Split", "Sunset", "Corrode", "Drift", "Kasbah", "Piazza"
-];
-
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Helper: Limpia texto agresivamente
 const clean = (s) => s ? s.replace(/[\n\t\r]/g, ' ').replace(/\s+/g, ' ').trim() : '';
-
-// Helper CRÍTICO: Extrae un número seguro de una celda sucia
-// Evita el error "241014" separando por cualquier cosa que no sea dígito
-const extractNumber = (str) => {
+const extractInt = (str) => {
     if (!str) return 0;
-    // Ejemplo entrada: "24 / 18 / 11" o "24\n18"
-    // Reemplazamos todo lo que no sea número o guión por espacio
-    const cleaned = str.replace(/[^\d-]/g, ' ').trim();
-    const parts = cleaned.split(/\s+/);
-    // Retornamos la primera parte numérica encontrada
-    return parseInt(parts[0]) || 0;
+    const match = str.match(/^(-?\d+)/);
+    return match ? parseInt(match[1]) : 0;
 };
 
 async function obtenerIdsRecientes() {
@@ -40,7 +25,6 @@ async function obtenerIdsRecientes() {
             fetch(`${API_SOURCE}?page=2`).then(r => r.json())
         ]);
         const all = [...p1.data, ...p2.data];
-        // Deduplicar
         const unique = [...new Map(all.map(item => [item.id, item])).values()];
         return unique.slice(0, MAX_MATCHES).map(m => m.id);
     } catch (e) { return []; }
@@ -59,7 +43,7 @@ async function scrapearPartido(matchId, index, total) {
         const html = await response.text();
         const $ = cheerio.load(html);
 
-        // --- 1. DATOS DE LA PARTIDA ---
+        // --- 1. DATOS GENERALES ---
         const teamA = clean($('.match-header-link-name').eq(0).text());
         const teamB = clean($('.match-header-link-name').eq(1).text());
         
@@ -77,128 +61,132 @@ async function scrapearPartido(matchId, index, total) {
 
         console.log(`   ✅ MATCH: ${teamA} [${scoreA}-${scoreB}] ${teamB}`);
 
-        // --- 2. MAPAS: ESTRATEGIA FUERZA BRUTA ---
-        // Buscamos TODOS los contenedores que podrían ser un mapa
-        let mapContainers = [];
+        // --- 2. DETECCIÓN DE MAPAS ---
+        let mapTabs = [];
+        let navItems = $('.vm-stats-games-nav-item');
+        if (navItems.length === 0) navItems = $('.js-map-switch');
+
+        if (navItems.length > 0) {
+            navItems.each((i, el) => {
+                const id = $(el).attr('data-game-id');
+                let cleanName = clean($(el).text()).replace(/^\d+\s+/, '').trim(); 
+                
+                // Score del mapa desde el tab (ej: "Ascent 13-9")
+                let sA = 0, sB = 0;
+                const sc = cleanName.match(/(\d+)[:\-\s]+(\d+)/);
+                let nameOnly = cleanName;
+                if (sc) {
+                    nameOnly = cleanName.replace(sc[0], '').trim();
+                    sA = parseInt(sc[1]);
+                    sB = parseInt(sc[2]);
+                }
+
+                if (nameOnly.toLowerCase().includes('all') || nameOnly.toLowerCase().includes('overview')) {
+                    nameOnly = 'All Maps';
+                    sA = scoreA; sB = scoreB;
+                }
+                mapTabs.push({ id, cleanName: nameOnly, score_a: sA, score_b: sB });
+            });
+        } 
         
-        // A. Pestañas normales (Bo3)
-        $('.vm-stats-games-nav-item').each((i, el) => {
-            const id = $(el).attr('data-game-id');
-            const txt = clean($(el).text());
-            let cleanName = txt.replace(/^\d+/, '').trim(); // Quitar numero inicial
-            
-            // Score del mapa
-            let sA = 0, sB = 0;
-            const scoreEx = cleanName.match(/(\d+)[:\-\s]+(\d+)/);
-            if (scoreEx) {
-                sA = parseInt(scoreEx[1]); sB = parseInt(scoreEx[2]);
-                cleanName = cleanName.replace(scoreEx[0], '').trim();
-            }
-
-            if (cleanName.toLowerCase().includes('all') || cleanName.toLowerCase().includes('overview')) {
-                cleanName = 'All Maps';
-                sA = scoreA; sB = scoreB;
-            }
-
-            mapContainers.push({ id, name: cleanName, score_a: sA, score_b: sB });
-        });
-
-        // B. Si NO hay pestañas (Bo1), detectamos el mapa leyendo el HTML entero
-        if (mapContainers.length === 0) {
-            console.log("   ⚡ Modo Bo1 activado.");
-            const pageText = $('body').text(); // Texto plano de toda la página
-            const headerText = $('.match-header-note, .match-header-event-series').text();
-            
+        // Bo1 Fallback
+        if (mapTabs.length === 0) {
+            console.log("   ⚡ Bo1 detectado.");
+            const fullText = $('body').text();
+            const mapsList = ["Ascent", "Bind", "Breeze", "Fracture", "Haven", "Icebox", "Lotus", "Pearl", "Split", "Sunset", "Abyss"];
             let detectedMap = "Unknown";
-            
-            // Buscamos qué mapa de nuestra lista maestra aparece en el header
-            for (const m of KNOWN_MAPS) {
-                // Regex: Que la palabra mapa esté sola (evita confundir substring)
-                const regex = new RegExp(`\\b${m}\\b`, 'i');
-                if (regex.test(headerText)) {
-                    detectedMap = m;
-                    break;
+            for (const m of mapsList) {
+                if (fullText.includes(`Map: ${m}`) || fullText.includes(`Decider: ${m}`)) {
+                    detectedMap = m; break;
                 }
             }
-            
-            console.log(`   🎯 Mapa encontrado: ${detectedMap}`);
-            // En Bo1, la tabla 'all' es el mapa único
-            mapContainers.push({ id: 'all', name: detectedMap, score_a: scoreA, score_b: scoreB });
+            mapTabs.push({ id: 'all', cleanName: detectedMap, score_a: scoreA, score_b: scoreB });
         }
 
-        console.log(`   📂 Estructura: ${mapContainers.map(m=>m.name).join(', ')}`);
+        console.log(`   📂 Mapas: ${mapTabs.map(m=>m.cleanName).join(', ')}`);
 
-        // --- 3. EXTRAER DATOS (SOLUCIÓN KDA) ---
+        // --- 3. EXTRAER JUGADORES Y RONDAS ---
         const allStats = [];
         const mapsInfo = [];
-        const processed = new Set();
+        const processedMaps = new Set();
 
-        for (const map of mapContainers) {
-            if (processed.has(map.name)) continue;
-            processed.add(map.name);
+        for (const map of mapTabs) {
+            if (processedMaps.has(map.cleanName)) continue;
+            processedMaps.add(map.cleanName);
 
-            // Buscar la tabla correcta
             let table = $(`.vm-stats-game[data-game-id="${map.id}"] table`);
-            // Fallback: Si es Bo1 y falló el ID, agarra la primera tabla grande
-            if (table.length === 0 && mapContainers.length === 1) {
+            let gameContainer = $(`.vm-stats-game[data-game-id="${map.id}"]`);
+            
+            if (table.length === 0 && map.id === 'all') {
                 table = $('.vm-stats-game table').first();
+                gameContainer = $('.vm-stats-game').first();
             }
             if (table.length === 0) continue;
 
-            // Guardar info del mapa (Scores)
-            if (map.name !== 'All Maps') {
-                mapsInfo.push({ 
-                    match_id: matchId, map_name: map.name, score_a: map.score_a, score_b: map.score_b 
+            // --- EXTRACCIÓN DE RONDAS (ATK/DEF) ---
+            // Buscamos dentro del contenedor del juego específico
+            let t1_t = 0, t1_ct = 0, t2_t = 0, t2_ct = 0;
+            
+            if (map.cleanName !== 'All Maps') {
+                // VLR estructura: .vm-stats-game-header -> .team -> .team-score -> span.mod-t / span.mod-ct
+                // El primer equipo en el header suele corresponder a Team A
+                const teamsHeader = gameContainer.find('.vm-stats-game-header .team');
+                
+                if (teamsHeader.length >= 2) {
+                    // Team 1 (A)
+                    const row1 = $(teamsHeader[0]);
+                    t1_t = extractInt(row1.find('.mod-t').text());
+                    t1_ct = extractInt(row1.find('.mod-ct').text());
+                    
+                    // Team 2 (B)
+                    const row2 = $(teamsHeader[1]);
+                    t2_t = extractInt(row2.find('.mod-t').text());
+                    t2_ct = extractInt(row2.find('.mod-ct').text());
+                }
+                
+                mapsInfo.push({
+                    match_id: matchId, 
+                    map_name: map.cleanName, 
+                    score_a: map.score_a, 
+                    score_b: map.score_b,
+                    t1_t, t1_ct, t2_t, t2_ct
                 });
             }
 
-            // --- DETECTAR INDICES DE COLUMNAS (REGEX EXACTO) ---
+            // --- COLUMNAS KDA ---
             const headers = [];
             table.find('thead tr').last().find('th, td').each((i, el) => {
-                let h = clean($(el).text()).toUpperCase();
-                if (!h) h = $(el).find('.mod-icon').length > 0 ? "ICON" : ""; // A veces usan iconos
-                if (!h) h = $(el).attr('title')?.toUpperCase() || "";
-                headers.push(h);
+                let txt = clean($(el).text()).toUpperCase();
+                if (!txt) txt = $(el).attr('title')?.toUpperCase() || ""; 
+                headers.push(txt);
             });
 
-            // Buscamos índices
             let idxK = headers.indexOf('K');
             let idxD = headers.indexOf('D');
             let idxA = headers.indexOf('A');
+            
+            if (idxK === -1) idxK = headers.findIndex(h => h.startsWith('K') && !h.includes('KAST'));
+            if (idxD === -1) idxD = headers.findIndex(h => h.startsWith('D'));
+            if (idxA === -1) idxA = headers.findIndex(h => h.startsWith('A'));
 
-            // Fallback visual (Si dice "KILLS" o tiene el título)
-            if (idxK === -1) idxK = headers.findIndex(h => h.includes('K') && !h.includes('KAST'));
-            if (idxD === -1) idxD = headers.findIndex(h => h.includes('D'));
-            if (idxA === -1) idxA = headers.findIndex(h => h.includes('A'));
-
-            // ULTIMO RECURSO: Posición fija basada en tamaño de tabla
             if (idxK === -1 || idxD === -1) {
-                // Si la tabla es ancha, K suele ser 4. Si es corta, 2.
-                idxK = headers.length > 6 ? 4 : 2;
-                idxD = idxK + 1;
-                idxA = idxK + 2;
-                console.warn(`      ⚠️ Headers KDA perdidos en ${map.name}. Usando K=${idxK}`);
+                if (headers.length >= 7) { idxK = 4; idxD = 5; idxA = 6; }
+                else { idxK = 3; idxD = 4; idxA = 5; }
             }
 
-            // Extraer filas
+            // --- FILAS DE JUGADORES ---
             table.find('tbody tr').each((i, row) => {
                 const cols = $(row).find('td');
-                // Nombre jugador: buscamos dentro de div text-of
-                let name = clean($(row).find('.text-of').first().text());
-                // Fallback nombre: texto directo de la celda
-                if (!name) name = clean($(cols).eq(0).text());
-                
-                if (!name) return;
+                const name = clean($(row).find('.text-of').first().text()); 
+                if (!name) return; 
 
-                const team = (allStats.filter(s => s.map_name === map.name).length < 5) ? teamA : teamB;
-                
+                const team = (allStats.filter(s => s.map_name === map.cleanName).length < 5) ? teamA : teamB;
                 let agentSrc = $(row).find('img').first().attr('src');
                 if (agentSrc && !agentSrc.startsWith('http')) agentSrc = 'https://www.vlr.gg' + agentSrc;
 
-                // USAMOS extractNumber AQUÍ PARA EVITAR EL ERROR DE DATABASE
-                const valK = extractNumber(cols.eq(idxK).text());
-                const valD = extractNumber(cols.eq(idxD).text());
-                const valA = extractNumber(cols.eq(idxA).text());
+                const valK = extractInt(clean(cols.eq(idxK).text()));
+                const valD = extractInt(clean(cols.eq(idxD).text()));
+                const valA = extractInt(clean(cols.eq(idxA).text()));
 
                 allStats.push({
                     match_id: matchId,
@@ -206,7 +194,7 @@ async function scrapearPartido(matchId, index, total) {
                     team_name: team,
                     agent_img: agentSrc,
                     k: valK, d: valD, a: valA,
-                    map_name: map.name
+                    map_name: map.cleanName
                 });
             });
         }
@@ -216,17 +204,13 @@ async function scrapearPartido(matchId, index, total) {
             await supabase.from('matches').upsert({
                 id: matchId, team_a: teamA, team_b: teamB, score_a: scoreA, score_b: scoreB, status: 'COMPLETED', last_update: new Date()
             });
-            
             await supabase.from('match_maps').delete().eq('match_id', matchId);
             if (mapsInfo.length > 0) await supabase.from('match_maps').insert(mapsInfo);
-            
             await supabase.from('match_stats').delete().eq('match_id', matchId);
             const { error } = await supabase.from('match_stats').insert(allStats);
-
-            if (!error) console.log(`   💾 Guardado: ${allStats.length} registros.`);
+            
+            if (!error) console.log(`   💾 Stats guardados.`);
             else console.error(`   ❌ Error DB: ${error.message}`);
-        } else {
-            console.warn("   ⚠️ No se encontraron datos para guardar.");
         }
 
     } catch (err) {
