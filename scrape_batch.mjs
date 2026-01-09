@@ -11,15 +11,17 @@ const MAX_MATCHES = 50;
 const DELAY_MS = 2000; 
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Helper: Limpieza básica
 const clean = (s) => s ? s.replace(/[\n\t\r]/g, ' ').replace(/\s+/g, ' ').trim() : '';
 
-// Helper mejorado: Extrae números incluso si están pegados o sucios
+// --- HELPER CRÍTICO CORREGIDO ---
+// Antes fallaba si el texto era "/ 15". Ahora busca el primer grupo de dígitos donde sea.
 const extractInt = (str) => {
     if (!str) return 0;
-    // Intenta buscar un número aislado primero
-    const match = str.match(/^(-?\d+)/);
-    if (match) return parseInt(match[1]);
-    return 0;
+    // Busca cualquier secuencia de dígitos (\d+) en cualquier parte de la cadena
+    const match = str.match(/(\d+)/);
+    return match ? parseInt(match[0]) : 0;
 };
 
 async function obtenerIdsRecientes() {
@@ -73,8 +75,7 @@ async function scrapearPartido(matchId, index, total) {
         if (navItems.length > 0) {
             navItems.each((i, el) => {
                 const id = $(el).attr('data-game-id');
-                let rawText = clean($(el).text());
-                let cleanName = rawText.replace(/^\d+\s+/, '').trim(); 
+                let cleanName = clean($(el).text()).replace(/^\d+\s+/, '').trim(); 
                 
                 let sA = 0, sB = 0;
                 const sc = cleanName.match(/(\d+)[:\-\s]+(\d+)/);
@@ -96,16 +97,14 @@ async function scrapearPartido(matchId, index, total) {
         if (mapTabs.length === 0) {
             console.log("   ⚡ Bo1 detectado.");
             const fullText = $('body').text();
-            // Lista ampliada de mapas
             const mapsList = ["Ascent", "Bind", "Breeze", "Fracture", "Haven", "Icebox", "Lotus", "Pearl", "Split", "Sunset", "Abyss", "Showdown"];
             let detectedMap = "Unknown";
             
-            // Prioridad 1: "Map: X" en header
+            // Prioridad: Header > Veto > Lista
             const headerMatch = fullText.match(/(?:Map|Decider)[:\s]+([a-zA-Z0-9]+)/i);
             if (headerMatch) {
                 detectedMap = headerMatch[1];
             } else {
-                // Prioridad 2: Fuerza bruta nombres conocidos
                 for (const m of mapsList) {
                     if ($('.match-header-note').text().includes(m) || $('.match-header-event-series').text().includes(m)) {
                         detectedMap = m; break;
@@ -135,7 +134,7 @@ async function scrapearPartido(matchId, index, total) {
             }
             if (table.length === 0) continue;
 
-            // Rondas ATK/DEF
+            // Rondas
             let t1_t = 0, t1_ct = 0, t2_t = 0, t2_ct = 0;
             if (map.cleanName !== 'All Maps') {
                 const teamsHeader = gameContainer.find('.vm-stats-game-header .team');
@@ -154,7 +153,7 @@ async function scrapearPartido(matchId, index, total) {
                 });
             }
 
-            // --- DETECCIÓN DE COLUMNAS (MÉTODO ANCHOR) ---
+            // --- DETECCIÓN COLUMNAS (ANCHOR K) ---
             const headers = [];
             table.find('thead tr').last().find('th, td').each((i, el) => {
                 let txt = clean($(el).text()).toUpperCase();
@@ -162,24 +161,18 @@ async function scrapearPartido(matchId, index, total) {
                 headers.push(txt);
             });
 
-            // 1. Buscamos el ANCLA: La columna "K" (Kills)
-            // Es la más fiable. Ignoramos "KAST".
+            // Buscamos K
             let idxK = headers.findIndex(h => (h === 'K' || h.startsWith('KILLS')) && !h.includes('KAST'));
-
+            
             let idxD = -1, idxA = -1;
-
             if (idxK !== -1) {
-                // ESTRATEGIA ANCLA:
-                // Si encontramos K, asumimos que D es K+1 y A es K+2
-                // Esto es universal en VLR (K -> D -> A)
+                // Si encontramos K, D es la siguiente y A la siguiente
                 idxD = idxK + 1;
                 idxA = idxK + 2;
-                // console.log(`      ⚓ Ancla K encontrada en ${idxK}. Asumiendo D=${idxD}, A=${idxA}`);
             } else {
-                // Fallback de emergencia si no hay header visible (tablas raras)
-                // Estructura usual: Player(0), Team(1), R(2), ACS(3), K(4), D(5), A(6)
-                idxK = 4; idxD = 5; idxA = 6;
-                console.warn(`      ⚠️ Header K no encontrado. Usando fallback fijo: 4,5,6.`);
+                // Fallback clásico
+                idxK = 4; idxD = 5; idxA = 6; 
+                console.warn("Using fallback columns");
             }
 
             table.find('tbody tr').each((i, row) => {
@@ -191,9 +184,10 @@ async function scrapearPartido(matchId, index, total) {
                 let agentSrc = $(row).find('img').first().attr('src');
                 if (agentSrc && !agentSrc.startsWith('http')) agentSrc = 'https://www.vlr.gg' + agentSrc;
 
+                // Usamos el nuevo extractInt que ignora los Slash
                 const valK = extractInt(clean(cols.eq(idxK).text()));
-                const valD = extractInt(clean(cols.eq(idxD).text())); // Ahora usa K+1
-                const valA = extractInt(clean(cols.eq(idxA).text())); // Ahora usa K+2
+                const valD = extractInt(clean(cols.eq(idxD).text()));
+                const valA = extractInt(clean(cols.eq(idxA).text()));
 
                 allStats.push({
                     match_id: matchId,
