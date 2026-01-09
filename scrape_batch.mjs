@@ -10,16 +10,27 @@ const API_SOURCE = 'https://vlr.orlandomm.net/api/v1/results';
 const MAX_MATCHES = 50; 
 const DELAY_MS = 2000; 
 
+// Lista maestra de mapas para búsqueda por fuerza bruta
+const KNOWN_MAPS = [
+    "Abyss", "Ascent", "Bind", "Breeze", "Fracture", "Haven", 
+    "Icebox", "Lotus", "Pearl", "Split", "Sunset", "Corrode", "Drift", "Kasbah", "Piazza"
+];
+
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Helper: Limpia saltos de línea y espacios dobles
+// Helper: Limpia texto agresivamente
 const clean = (s) => s ? s.replace(/[\n\t\r]/g, ' ').replace(/\s+/g, ' ').trim() : '';
 
-// Helper: Extrae solo el primer número de un texto (ej: "24/10" -> 24)
-const extractInt = (str) => {
+// Helper CRÍTICO: Extrae un número seguro de una celda sucia
+// Evita el error "241014" separando por cualquier cosa que no sea dígito
+const extractNumber = (str) => {
     if (!str) return 0;
-    const match = str.match(/^(-?\d+)/); // Busca número al inicio (soporta negativos para +/-)
-    return match ? parseInt(match[1]) : 0;
+    // Ejemplo entrada: "24 / 18 / 11" o "24\n18"
+    // Reemplazamos todo lo que no sea número o guión por espacio
+    const cleaned = str.replace(/[^\d-]/g, ' ').trim();
+    const parts = cleaned.split(/\s+/);
+    // Retornamos la primera parte numérica encontrada
+    return parseInt(parts[0]) || 0;
 };
 
 async function obtenerIdsRecientes() {
@@ -29,6 +40,7 @@ async function obtenerIdsRecientes() {
             fetch(`${API_SOURCE}?page=2`).then(r => r.json())
         ]);
         const all = [...p1.data, ...p2.data];
+        // Deduplicar
         const unique = [...new Map(all.map(item => [item.id, item])).values()];
         return unique.slice(0, MAX_MATCHES).map(m => m.id);
     } catch (e) { return []; }
@@ -47,7 +59,7 @@ async function scrapearPartido(matchId, index, total) {
         const html = await response.text();
         const $ = cheerio.load(html);
 
-        // --- 1. DATOS GENERALES ---
+        // --- 1. DATOS DE LA PARTIDA ---
         const teamA = clean($('.match-header-link-name').eq(0).text());
         const teamB = clean($('.match-header-link-name').eq(1).text());
         
@@ -65,143 +77,128 @@ async function scrapearPartido(matchId, index, total) {
 
         console.log(`   ✅ MATCH: ${teamA} [${scoreA}-${scoreB}] ${teamB}`);
 
-        // --- 2. DETECCIÓN DE MAPAS (BO3 vs BO1) ---
-        let mapTabs = [];
-        let navItems = $('.vm-stats-games-nav-item');
-        if (navItems.length === 0) navItems = $('.js-map-switch');
-
-        if (navItems.length > 0) {
-            // CASO 1: HAY PESTAÑAS (Bo3/Bo5)
-            navItems.each((i, el) => {
-                const id = $(el).attr('data-game-id');
-                let rawText = clean($(el).text()); // Ej: "1 Ascent 13-9"
-                let cleanName = rawText.replace(/^\d+\s+/, '').trim(); // "Ascent 13-9"
-                
-                // Extraer score del mapa
-                let sA = 0, sB = 0;
-                const sc = cleanName.match(/(\d+)[:\-\s]+(\d+)/);
-                let nameOnly = cleanName;
-                if (sc) {
-                    nameOnly = cleanName.replace(sc[0], '').trim();
-                    sA = parseInt(sc[1]);
-                    sB = parseInt(sc[2]);
-                }
-
-                if (nameOnly.toLowerCase().includes('all') || nameOnly.toLowerCase().includes('overview')) {
-                    nameOnly = 'All Maps';
-                    sA = scoreA; sB = scoreB;
-                }
-
-                mapTabs.push({ id, cleanName: nameOnly, score_a: sA, score_b: sB });
-            });
-        } 
+        // --- 2. MAPAS: ESTRATEGIA FUERZA BRUTA ---
+        // Buscamos TODOS los contenedores que podrían ser un mapa
+        let mapContainers = [];
         
-        // CASO 2: NO HAY PESTAÑAS (Bo1)
-        if (mapTabs.length === 0) {
-            console.log("   ⚡ Bo1 sin pestañas. Buscando nombre del mapa...");
+        // A. Pestañas normales (Bo3)
+        $('.vm-stats-games-nav-item').each((i, el) => {
+            const id = $(el).attr('data-game-id');
+            const txt = clean($(el).text());
+            let cleanName = txt.replace(/^\d+/, '').trim(); // Quitar numero inicial
+            
+            // Score del mapa
+            let sA = 0, sB = 0;
+            const scoreEx = cleanName.match(/(\d+)[:\-\s]+(\d+)/);
+            if (scoreEx) {
+                sA = parseInt(scoreEx[1]); sB = parseInt(scoreEx[2]);
+                cleanName = cleanName.replace(scoreEx[0], '').trim();
+            }
+
+            if (cleanName.toLowerCase().includes('all') || cleanName.toLowerCase().includes('overview')) {
+                cleanName = 'All Maps';
+                sA = scoreA; sB = scoreB;
+            }
+
+            mapContainers.push({ id, name: cleanName, score_a: sA, score_b: sB });
+        });
+
+        // B. Si NO hay pestañas (Bo1), detectamos el mapa leyendo el HTML entero
+        if (mapContainers.length === 0) {
+            console.log("   ⚡ Modo Bo1 activado.");
+            const pageText = $('body').text(); // Texto plano de toda la página
+            const headerText = $('.match-header-note, .match-header-event-series').text();
             
             let detectedMap = "Unknown";
-            const fullHeader = $('.match-header-note, .match-header-event-series').text();
-            const vetoText = $('.match-header-note-side').text();
-
-            // Lista de mapas conocidos para buscar con "includes" (más fiable que regex a veces)
-            const knownMaps = ["Ascent", "Bind", "Breeze", "Fracture", "Haven", "Icebox", "Lotus", "Pearl", "Split", "Sunset", "Abyss"];
             
-            // 1. Buscar en Veto ("Map: Ascent" o "Decider: Ascent")
-            const vetoMatch = vetoText.match(/(?:decider|map)[:\s]+([a-zA-Z0-9]+)/i);
-            if (vetoMatch) detectedMap = vetoMatch[1];
-
-            // 2. Buscar en Header
-            if (detectedMap === "Unknown") {
-                const headerMatch = fullHeader.match(/Map[:\s]+([a-zA-Z0-9]+)/i);
-                if (headerMatch) detectedMap = headerMatch[1];
-            }
-
-            // 3. Fuerza bruta: ¿Aparece algún nombre de mapa en el texto del header?
-            if (detectedMap === "Unknown") {
-                for (const m of knownMaps) {
-                    if (fullHeader.includes(m) || vetoText.includes(m)) {
-                        detectedMap = m;
-                        break;
-                    }
+            // Buscamos qué mapa de nuestra lista maestra aparece en el header
+            for (const m of KNOWN_MAPS) {
+                // Regex: Que la palabra mapa esté sola (evita confundir substring)
+                const regex = new RegExp(`\\b${m}\\b`, 'i');
+                if (regex.test(headerText)) {
+                    detectedMap = m;
+                    break;
                 }
             }
-
-            // En Bo1, el mapa tiene el score global
-            mapTabs.push({ id: 'all', cleanName: detectedMap, score_a: scoreA, score_b: scoreB });
+            
+            console.log(`   🎯 Mapa encontrado: ${detectedMap}`);
+            // En Bo1, la tabla 'all' es el mapa único
+            mapContainers.push({ id: 'all', name: detectedMap, score_a: scoreA, score_b: scoreB });
         }
 
-        console.log(`   📂 Tabs detectados: ${mapTabs.map(m=>m.cleanName).join(', ')}`);
+        console.log(`   📂 Estructura: ${mapContainers.map(m=>m.name).join(', ')}`);
 
-        // --- 3. EXTRAER JUGADORES ---
+        // --- 3. EXTRAER DATOS (SOLUCIÓN KDA) ---
         const allStats = [];
-        const processedMaps = new Set();
         const mapsInfo = [];
+        const processed = new Set();
 
-        for (const map of mapTabs) {
-            if (processedMaps.has(map.cleanName)) continue;
-            processedMaps.add(map.cleanName);
+        for (const map of mapContainers) {
+            if (processed.has(map.name)) continue;
+            processed.add(map.name);
 
-            // Buscar tabla
+            // Buscar la tabla correcta
             let table = $(`.vm-stats-game[data-game-id="${map.id}"] table`);
-            // Fallback para Bo1: la primera tabla que encuentre
-            if (table.length === 0 && map.id === 'all') table = $('.vm-stats-game table').first();
-            
+            // Fallback: Si es Bo1 y falló el ID, agarra la primera tabla grande
+            if (table.length === 0 && mapContainers.length === 1) {
+                table = $('.vm-stats-game table').first();
+            }
             if (table.length === 0) continue;
 
-            // Guardar Info Mapa (excepto All Maps)
-            if (map.cleanName !== 'All Maps') {
-                mapsInfo.push({ match_id: matchId, map_name: map.cleanName, score_a: map.score_a, score_b: map.score_b });
+            // Guardar info del mapa (Scores)
+            if (map.name !== 'All Maps') {
+                mapsInfo.push({ 
+                    match_id: matchId, map_name: map.name, score_a: map.score_a, score_b: map.score_b 
+                });
             }
 
-            // --- DETECCIÓN DE COLUMNAS ---
+            // --- DETECTAR INDICES DE COLUMNAS (REGEX EXACTO) ---
             const headers = [];
             table.find('thead tr').last().find('th, td').each((i, el) => {
-                let txt = clean($(el).text());
-                if (!txt) txt = $(el).attr('title') || ""; 
-                headers.push(txt.toUpperCase());
+                let h = clean($(el).text()).toUpperCase();
+                if (!h) h = $(el).find('.mod-icon').length > 0 ? "ICON" : ""; // A veces usan iconos
+                if (!h) h = $(el).attr('title')?.toUpperCase() || "";
+                headers.push(h);
             });
 
-            // Buscamos K, D, A
+            // Buscamos índices
             let idxK = headers.indexOf('K');
             let idxD = headers.indexOf('D');
             let idxA = headers.indexOf('A');
-            
-            // Fallbacks de nombre (Kills, Deaths...)
-            if (idxK === -1) idxK = headers.findIndex(h => h.startsWith('K') && !h.includes('KAST'));
-            if (idxD === -1) idxD = headers.findIndex(h => h.startsWith('D'));
-            if (idxA === -1) idxA = headers.findIndex(h => h.startsWith('A'));
 
-            // DEBUG: Ver qué columnas encontró
-            // console.log(`      [DEBUG] Headers en ${map.cleanName}:`, headers);
+            // Fallback visual (Si dice "KILLS" o tiene el título)
+            if (idxK === -1) idxK = headers.findIndex(h => h.includes('K') && !h.includes('KAST'));
+            if (idxD === -1) idxD = headers.findIndex(h => h.includes('D'));
+            if (idxA === -1) idxA = headers.findIndex(h => h.includes('A'));
 
-            // Si falla la detección, usamos la lógica de VLR estándar
+            // ULTIMO RECURSO: Posición fija basada en tamaño de tabla
             if (idxK === -1 || idxD === -1) {
-                console.warn(`      ⚠️ Columnas no encontradas. Usando posición fija.`);
-                // VLR Standard: Player(0), Team(1), R(2), ACS(3), K(4), D(5), A(6) -> Total 7+ cols
-                // VLR Compact: Player(0), Team(1), ACS(2), K(3), D(4), A(5) -> Total ~6 cols
-                if (headers.length >= 7) { idxK = 4; idxD = 5; idxA = 6; }
-                else { idxK = 3; idxD = 4; idxA = 5; }
+                // Si la tabla es ancha, K suele ser 4. Si es corta, 2.
+                idxK = headers.length > 6 ? 4 : 2;
+                idxD = idxK + 1;
+                idxA = idxK + 2;
+                console.warn(`      ⚠️ Headers KDA perdidos en ${map.name}. Usando K=${idxK}`);
             }
 
-            // Iterar filas
+            // Extraer filas
             table.find('tbody tr').each((i, row) => {
                 const cols = $(row).find('td');
-                const name = clean($(row).find('.text-of').first().text()); 
-                if (!name) return; 
+                // Nombre jugador: buscamos dentro de div text-of
+                let name = clean($(row).find('.text-of').first().text());
+                // Fallback nombre: texto directo de la celda
+                if (!name) name = clean($(cols).eq(0).text());
+                
+                if (!name) return;
 
-                // Equipo: asumimos orden (Team A primero, luego Team B)
-                // O mejor: detectamos cambios en el HTML si es posible, pero por ahora esto funciona al 90%
-                const team = (allStats.filter(s => s.map_name === map.cleanName).length < 5) ? teamA : teamB;
+                const team = (allStats.filter(s => s.map_name === map.name).length < 5) ? teamA : teamB;
                 
                 let agentSrc = $(row).find('img').first().attr('src');
                 if (agentSrc && !agentSrc.startsWith('http')) agentSrc = 'https://www.vlr.gg' + agentSrc;
 
-                // --- EXTRACCIÓN SEGURA DE NÚMEROS ---
-                // Aquí evitamos el error "241014". Leemos el texto y sacamos solo el primer número.
-                const valK = extractInt(clean(cols.eq(idxK).text()));
-                const valD = extractInt(clean(cols.eq(idxD).text()));
-                const valA = extractInt(clean(cols.eq(idxA).text()));
+                // USAMOS extractNumber AQUÍ PARA EVITAR EL ERROR DE DATABASE
+                const valK = extractNumber(cols.eq(idxK).text());
+                const valD = extractNumber(cols.eq(idxD).text());
+                const valA = extractNumber(cols.eq(idxA).text());
 
                 allStats.push({
                     match_id: matchId,
@@ -209,7 +206,7 @@ async function scrapearPartido(matchId, index, total) {
                     team_name: team,
                     agent_img: agentSrc,
                     k: valK, d: valD, a: valA,
-                    map_name: map.cleanName
+                    map_name: map.name
                 });
             });
         }
@@ -219,16 +216,17 @@ async function scrapearPartido(matchId, index, total) {
             await supabase.from('matches').upsert({
                 id: matchId, team_a: teamA, team_b: teamB, score_a: scoreA, score_b: scoreB, status: 'COMPLETED', last_update: new Date()
             });
+            
             await supabase.from('match_maps').delete().eq('match_id', matchId);
             if (mapsInfo.length > 0) await supabase.from('match_maps').insert(mapsInfo);
             
             await supabase.from('match_stats').delete().eq('match_id', matchId);
             const { error } = await supabase.from('match_stats').insert(allStats);
-            
-            if (!error) console.log(`   💾 Guardado OK (${allStats.length} registros).`);
-            else console.error(`   ❌ Error DB Stats: ${error.message}`);
+
+            if (!error) console.log(`   💾 Guardado: ${allStats.length} registros.`);
+            else console.error(`   ❌ Error DB: ${error.message}`);
         } else {
-            console.warn("   ⚠️ No se encontraron jugadores.");
+            console.warn("   ⚠️ No se encontraron datos para guardar.");
         }
 
     } catch (err) {
