@@ -42,15 +42,30 @@ async function scrapearPartido(matchId) {
         const html = await response.text();
         const $ = cheerio.load(html);
 
-        // 1. DATOS GENERALES
+        // 1. DATOS GENERALES (CORREGIDO PARA SERIES SCORE)
         const teamA = $('.match-header-link-name').eq(0).text().trim();
         const teamB = $('.match-header-link-name').eq(1).text().trim();
-        const scoreRaw = $('.match-header-vs-score').text();
-        const scoreNumbers = scoreRaw.match(/(\d+)/g); 
-        const scoreA = scoreNumbers ? parseInt(scoreNumbers[0]) : 0;
-        const scoreB = scoreNumbers ? parseInt(scoreNumbers[1]) : 0;
 
-        console.log(`   ✅ ${teamA} [${scoreA}-${scoreB}] ${teamB}`);
+        // BUSCAMOS EL SCORE DE LA SERIE (Los números pequeños al lado del nombre del equipo)
+        // VLR usa .mod-1 para el equipo izquierdo y .mod-2 para el derecho
+        let scoreA_text = $('.match-header-score.mod-1').first().text().trim();
+        let scoreB_text = $('.match-header-score.mod-2').first().text().trim();
+
+        // Limpieza extra por si acaso
+        let scoreA = parseInt(scoreA_text.replace(/\D/g, '')) || 0;
+        let scoreB = parseInt(scoreB_text.replace(/\D/g, '')) || 0;
+
+        // --- PLAN B (Por si el Plan A falla en partidas muy viejas) ---
+        // Si ambos son 0 en un partido completado, algo anda mal.
+        // Intentamos contar los mapas ganados manualmente.
+        if (scoreA === 0 && scoreB === 0 && $('.match-header-vs-note').text().includes('final')) {
+             console.log("   ⚠️ Score no detectado en header. Usando Plan B (contar mapas)...");
+             // Contamos los "puntitos" de victoria de cada equipo
+             scoreA = $('.match-header-link.mod-1 .wf-score-point.mod-win').length;
+             scoreB = $('.match-header-link.mod-2 .wf-score-point.mod-win').length;
+        }
+
+        console.log(`   ✅ MATCH SCORE: ${teamA} [ ${scoreA} - ${scoreB} ] ${teamB}`);
 
         // 2. DETECTAR COLUMNAS
         const table = $('.vm-stats-game[data-game-id="all"] table');

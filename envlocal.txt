@@ -4,5 +4,7 @@ MONGODB_DB="valorantesports"
 REFRESH_SECRET="miclave123"
 
 NEXT_PUBLIC_API_BASE="https://valorantesports-znyr-h5dafifqd-anagatunas-projects.vercel.app"
-
 NEXT_PUBLIC_BASE_URL=http://localhost:3000
+
+NEXT_PUBLIC_SUPABASE_URL=https://yumqvwfknvfdzsrjpvqm.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl1bXF2d2ZrbnZmZHpzcmpwdnFtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc4OTczNzEsImV4cCI6MjA4MzQ3MzM3MX0.8ECIoMEzx-F0ZvJJkXKMn2AntlWOjGu_Kya4hQEjKqg
