@@ -49,10 +49,22 @@ async function scrapearPartido(matchId, index, total) {
         const html = await response.text();
         const $ = cheerio.load(html);
 
-        // --- 1. DATOS GENERALES ---
+        // --- 1. DATOS GENERALES Y LOGOS ---
         const teamA = clean($('.match-header-link-name').eq(0).text());
         const teamB = clean($('.match-header-link-name').eq(1).text());
         
+        // EXTRAER LOGOS
+        // vlr.gg usa imágenes con rutas relativas tipo "//owcdn.net/..."
+        const getLogo = (idx) => {
+            let src = $('.match-header-link-img').eq(idx).attr('src');
+            if (src && src.startsWith('//')) src = 'https:' + src;
+            return src || null;
+        };
+
+        const logoA = getLogo(0);
+        const logoB = getLogo(1);
+
+        // Score
         let scoreA = 0, scoreB = 0;
         const headerScoreText = $('.match-header-vs-score').text().trim(); 
         const scoreMatch = headerScoreText.match(/(\d+)[:\-\s]+(\d+)/);
@@ -65,7 +77,7 @@ async function scrapearPartido(matchId, index, total) {
             scoreB = $('.match-header-link.mod-2 .wf-score-point.mod-win').length;
         }
 
-        console.log(`   ✅ MATCH: ${teamA} [${scoreA}-${scoreB}] ${teamB}`);
+        console.log(`   ✅ MATCH: ${teamA} vs ${teamB}`);
 
         // --- 2. DETECCIÓN DE MAPAS ---
         let mapTabs = [];
@@ -201,9 +213,19 @@ async function scrapearPartido(matchId, index, total) {
         }
 
         // --- 4. GUARDAR ---
+        // --- 4. GUARDAR ---
         if (allStats.length > 0) {
+            // A. Match (AHORA GUARDAMOS LOGOS)
             await supabase.from('matches').upsert({
-                id: matchId, team_a: teamA, team_b: teamB, score_a: scoreA, score_b: scoreB, status: 'COMPLETED', last_update: new Date()
+                id: matchId, 
+                team_a: teamA, 
+                team_b: teamB, 
+                score_a: scoreA, 
+                score_b: scoreB, 
+                team_a_logo: logoA, // <--- NUEVO
+                team_b_logo: logoB, // <--- NUEVO
+                status: 'COMPLETED', 
+                last_update: new Date()
             });
             await supabase.from('match_maps').delete().eq('match_id', matchId);
             if (mapsInfo.length > 0) await supabase.from('match_maps').insert(mapsInfo);
