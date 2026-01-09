@@ -57,10 +57,8 @@ async function scrapearPartido(matchId, index, total) {
 
         console.log(`   ✅ MATCH: ${teamA} [${scoreA}-${scoreB}] ${teamB}`);
 
-        // --- 2. DETECCIÓN DE MAPAS ROBUSTA ---
+        // --- 2. DETECCIÓN DE MAPAS ---
         let mapTabs = [];
-        
-        // Estrategia A: Buscar pestañas (Bo3/Bo5)
         let navItems = $('.vm-stats-games-nav-item');
         if (navItems.length === 0) navItems = $('.js-map-switch');
 
@@ -68,15 +66,14 @@ async function scrapearPartido(matchId, index, total) {
             navItems.each((i, el) => {
                 const id = $(el).attr('data-game-id');
                 let rawText = cleanText($(el).text());
+                // Limpieza "1 Haven" -> "Haven"
+                let cleanName = rawText.replace(/^\d+\s+/, '').trim(); 
                 
-                // Ejemplo rawText: "1 Ascent 13-9"
-                let cleanName = rawText.replace(/^\d+\s+/, '').trim(); // "Ascent 13-9"
-                
-                // Separar nombre y score
+                // Extraer score del mapa si existe "Ascent 13-9"
                 let scoreMapA = 0, scoreMapB = 0;
                 const scoreExtract = cleanName.match(/(\d+)[:\-\s]+(\d+)/);
-                
                 let nameOnly = cleanName;
+
                 if (scoreExtract) {
                     nameOnly = cleanName.replace(scoreExtract[0], '').trim();
                     scoreMapA = parseInt(scoreExtract[1]);
@@ -85,49 +82,26 @@ async function scrapearPartido(matchId, index, total) {
 
                 if (nameOnly.toLowerCase().includes('all') || nameOnly.toLowerCase().includes('overview')) {
                     nameOnly = 'All Maps';
-                    // El score de All Maps es el de la serie
-                    scoreMapA = scoreA;
-                    scoreMapB = scoreB;
+                    scoreMapA = scoreA; scoreMapB = scoreB;
                 }
 
-                mapTabs.push({ 
-                    id, 
-                    cleanName: nameOnly, 
-                    score_a: scoreMapA, 
-                    score_b: scoreMapB 
-                });
+                mapTabs.push({ id, cleanName: nameOnly, score_a: scoreMapA, score_b: scoreMapB });
             });
         } 
-        
-        // Estrategia B: Si no hay pestañas, es un Bo1
+
+        // Fallback Bo1 (Si no hay pestañas)
         if (mapTabs.length === 0) {
             console.log("   ⚡ Bo1 sin pestañas detectado.");
-            
-            // Buscar nombre del mapa en el header o vetos
             const noteText = $('.match-header-note, .match-header-event-series').text();
-            const vetoText = $('.match-header-note-side').text();
+            const mapMatch = noteText.match(/(?:Map|Decider)[:\s]+([a-zA-Z0-9\s]+)/i);
+            let mapName = mapMatch ? mapMatch[1].split(/,|\n/)[0].trim() : 'Unknown';
             
-            let mapName = 'Unknown';
-            // Regex para buscar "Map: Ascent" o "Decider: Ascent"
-            const mapMatch = noteText.match(/(?:Map|Decider)[:\s]+([a-zA-Z0-9\s]+)/i) || 
-                             vetoText.match(/(?:Map|Decider)[:\s]+([a-zA-Z0-9\s]+)/i);
-
-            if (mapMatch) {
-                mapName = mapMatch[1].trim();
-                // Limpiar basura tipo "VCT 2024" si se coló
-                mapName = mapName.split(/,|\n/)[0].trim();
-            }
-
-            // En Bo1, el mapa unico tiene el score global
-            mapTabs.push({ 
-                id: 'all', // Usualmente 'all' funciona para la única tabla visible
-                cleanName: mapName, 
-                score_a: scoreA, 
-                score_b: scoreB 
-            });
+            mapTabs.push({ id: 'all', cleanName: mapName, score_a: scoreA, score_b: scoreB });
         }
 
-        // --- 3. EXTRAER JUGADORES (CON DETECCIÓN DE COLUMNAS) ---
+        console.log(`   📂 Mapas: ${mapTabs.map(m=>m.cleanName).join(', ')}`);
+
+        // --- 3. EXTRAER JUGADORES (CORRECCIÓN CRÍTICA DE COLUMNAS) ---
         const allStats = [];
         const mapsInfo = [];
         const processedMaps = new Set();
@@ -136,96 +110,97 @@ async function scrapearPartido(matchId, index, total) {
             if (processedMaps.has(map.cleanName)) continue;
             processedMaps.add(map.cleanName);
 
-            // Buscar tabla
             let table = $(`.vm-stats-game[data-game-id="${map.id}"] table`);
             if (table.length === 0 && map.id === 'all') table = $('.vm-stats-game table').first();
             
             if (table.length === 0) continue;
 
-            // Guardar info del mapa (Scores)
+            // Guardar Map Info
             if (map.cleanName !== 'All Maps') {
                 mapsInfo.push({
-                    match_id: matchId,
-                    map_name: map.cleanName,
-                    score_a: map.score_a,
-                    score_b: map.score_b
+                    match_id: matchId, map_name: map.cleanName, score_a: map.score_a, score_b: map.score_b
                 });
             }
 
-            // --- DETECCIÓN DINÁMICA DE COLUMNAS (CRÍTICO) ---
-            const headers = table.find('thead tr').last().find('th, td');
-            let idxK = -1, idxD = -1, idxA = -1;
-
-            headers.each((i, el) => {
-                const txt = $(el).text().trim(); // Case sensitive a veces ayuda, pero mejor regex
-                
-                // K: Puede ser "K", "Kills", pero NO "KAST" ni "FK"
-                if (/^K$/i.test(txt) || /^Kills$/i.test(txt)) idxK = i;
-                // D: "D", "Deaths", NO "FD"
-                if (/^D$/i.test(txt) || /^Deaths$/i.test(txt)) idxD = i;
-                // A: "A", "Assists"
-                if (/^A$/i.test(txt) || /^Assists$/i.test(txt)) idxA = i;
+            // --- DETECCIÓN DE COLUMNAS MEJORADA ---
+            const headers = [];
+            table.find('thead tr').last().find('th, td').each((i, el) => {
+                // Limpiamos totalmente el texto: " D " -> "D"
+                headers.push($(el).text().replace(/[\n\t\r]/g, '').trim().toUpperCase());
             });
 
-            // Fallback por si vlr usa iconos o texto raro
-            if (idxK === -1) { 
-                // Adivinanza educada basada en estructura común de vlr
-                // Player(0) Agent(1) ACS(2) K(3) D(4) A(5) ...
-                console.warn(`   ⚠️ Headers KDA no claros en ${map.cleanName}, usando fallback.`);
-                idxK = 3; idxD = 4; idxA = 5;
-                // A veces es 4,5,6 si hay Rating. Ajustar si sigue fallando.
+            // Buscamos índices exactos
+            let idxK = headers.indexOf('K');
+            if (idxK === -1) idxK = headers.findIndex(h => h.startsWith('K') && !h.includes('KAST')); // Fallback para "Kills"
+
+            let idxD = headers.indexOf('D');
+            if (idxD === -1) idxD = headers.findIndex(h => h.startsWith('D')); // Fallback para "Deaths"
+            
+            let idxA = headers.indexOf('A');
+            if (idxA === -1) idxA = headers.findIndex(h => h.startsWith('A')); // Fallback para "Assists"
+
+            // Si falló la detección, usamos los índices más comunes de vlr.gg
+            if (idxK === -1 || idxD === -1) {
+                console.warn(`   ⚠️ Indices no encontrados en ${map.cleanName}. Usando defaults.`);
+                // Estructura común: Player, Agent, Rating, ACS, K, D, A
+                idxK = 4; idxD = 5; idxA = 6;
+            } else {
+                // console.log(`   ✅ Indices detectados: K[${idxK}] D[${idxD}] A[${idxA}]`);
             }
 
-            // Extraer filas
+            // Iterar Filas
             table.find('tbody tr').each((i, row) => {
                 const cols = $(row).find('td');
                 const name = cleanText($(row).find('.text-of').first().text()); 
                 if (!name) return; 
 
-                // Asignar equipo (simple: primeros 5 vs ultimos 5)
+                // Equipo (Simple: primeros 5 vs ultimos 5)
                 const team = (allStats.filter(s => s.map_name === map.cleanName).length < 5) ? teamA : teamB;
                 
                 let agentSrc = $(row).find('img').first().attr('src');
                 if (agentSrc && !agentSrc.startsWith('http')) agentSrc = 'https://www.vlr.gg' + agentSrc;
 
-                // Helper para limpiar números complejos "24 (5)" -> 24
+                // Extracción Segura
                 const getVal = (idx) => {
-                    if (idx < 0 || idx >= cols.length) return 0;
-                    const raw = $(cols).eq(idx).text().trim();
-                    const num = raw.match(/^(\d+)/); // Agarra numero al inicio
+                    if (!cols.eq(idx).length) return 0;
+                    // Buscamos numeros, ignorando paréntesis o slashes. "24" o "24/18" -> agarra 24
+                    const txt = cols.eq(idx).text().trim();
+                    const num = txt.match(/^(\d+)/); 
                     return num ? parseInt(num[1]) : 0;
                 };
+
+                const valK = getVal(idxK);
+                const valD = getVal(idxD);
+                const valA = getVal(idxA);
+
+                // DEBUG: Si las muertes son 0 y las kills no, avisa
+                // if (valK > 0 && valD === 0) console.log(`      ⚠️ ${name}: K=${valK} pero D=0 (Header D index: ${idxD})`);
 
                 allStats.push({
                     match_id: matchId,
                     player_name: name,
                     team_name: team,
                     agent_img: agentSrc,
-                    k: getVal(idxK),
-                    d: getVal(idxD),
-                    a: getVal(idxA),
+                    k: valK,
+                    d: valD,
+                    a: valA,
                     map_name: map.cleanName
                 });
             });
         }
 
-        // --- 4. GUARDAR EN SUPABASE ---
+        // --- 4. GUARDAR ---
         if (allStats.length > 0) {
-            // A. Match
             await supabase.from('matches').upsert({
                 id: matchId, team_a: teamA, team_b: teamB, score_a: scoreA, score_b: scoreB, status: 'COMPLETED', last_update: new Date()
             });
-            // B. Mapas
             await supabase.from('match_maps').delete().eq('match_id', matchId);
             if (mapsInfo.length > 0) await supabase.from('match_maps').insert(mapsInfo);
-            // C. Stats
             await supabase.from('match_stats').delete().eq('match_id', matchId);
             const { error } = await supabase.from('match_stats').insert(allStats);
 
-            if (!error) console.log(`   💾 Stats OK: ${allStats.length} filas.`);
+            if (!error) console.log(`   💾 Stats guardados.`);
             else console.error("   ❌ Error Supabase:", error.message);
-        } else {
-            console.warn("   ⚠️ No se extrajeron datos.");
         }
 
     } catch (err) {
