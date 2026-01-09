@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 
 const safe = (n) => Number(n ?? 0) || 0;
 
-/* ===== Agents Logic ===== */
+/* ===== Utils ===== */
 const AGENT_ALIAS = { "kay/o": "kayo", brim: "brimstone", harbour: "harbor" };
 const agentKey = (s = "") => {
   if (!s) return "unknown";
@@ -19,13 +19,10 @@ const agentKey = (s = "") => {
   const key = base.replace(/[^a-z]/g, "");
   return (AGENT_ALIAS[key] || key).replace("/", "");
 };
-
 function resolveAgentPair(agentNameOrUrl) {
   const k = agentKey(agentNameOrUrl);
   return { cover: `/agents/${k}/${k}-1.webp` };
 }
-
-/* ===== Diamantes ===== */
 function SeriesDiamonds({ wins, side }) {
   const totalDots = wins > 2 ? 3 : 2; 
   return (
@@ -48,6 +45,7 @@ export default function MatchDetail({ match }) {
   const [mapsResults, setMapsResults] = useState([]); 
   const [loading, setLoading] = useState(false);
 
+  // Score Global
   const wins1 = safe(match?.score1 ?? match?.series?.wins1 ?? match?.teams?.[0]?.score);
   const wins2 = safe(match?.score2 ?? match?.series?.wins2 ?? match?.teams?.[1]?.score);
 
@@ -56,8 +54,6 @@ export default function MatchDetail({ match }) {
 
     async function fetchData() {
         setLoading(true);
-        
-        // Cargar todo en paralelo
         const [statsRes, mapsRes] = await Promise.all([
             supabase.from('match_stats').select('*').eq('match_id', match.id),
             supabase.from('match_maps').select('*').eq('match_id', match.id).order('id', { ascending: true })
@@ -68,36 +64,32 @@ export default function MatchDetail({ match }) {
         if (statsRes.data && statsRes.data.length > 0) {
             setAllStats(statsRes.data);
             
-            // Obtener mapas únicos
-            // Si el scraper hizo su trabajo, en Bo1 solo vendrá "Ascent" (sin All Maps)
-            // En Bo3 vendrá "All Maps", "Ascent", "Bind"
+            // Mapas únicos en los stats
             let uniqueMaps = [...new Set(statsRes.data.map(s => s.map_name))];
-
-            // Ordenar: "All Maps" siempre primero si existe
-            uniqueMaps.sort((a, b) => {
-                if (a === 'All Maps') return -1;
-                if (b === 'All Maps') return 1;
-                return 0;
-            });
-
+            
+            // Lógica de ordenamiento: All Maps primero
+            uniqueMaps.sort((a, b) => (a === 'All Maps' ? -1 : b === 'All Maps' ? 1 : 0));
+            
             setAvailableMaps(uniqueMaps);
-            // Seleccionar el primero por defecto
+            // Default: All Maps si existe, sino el único mapa que haya
             setSelectedMap(uniqueMaps[0]);
         }
         setLoading(false);
     }
-
     fetchData();
   }, [match?.id]);
 
   const scoreboard = useMemo(() => {
       if (allStats.length === 0 || !selectedMap) return { playersT1: [], playersT2: [] };
-
       const filtered = allStats.filter(s => s.map_name === selectedMap);
       
+      // Asegurar separación correcta de equipos
+      // A veces el orden en DB no es secuencial, mejor agrupar por team_name
+      // Usamos los nombres de equipo del match prop como referencia si coinciden, sino los de la DB
       const teamsInDb = [...new Set(filtered.map(s => s.team_name))];
-      const teamAName = teamsInDb[0];
-      const teamBName = teamsInDb.find(n => n !== teamAName);
+      // Intentar emparejar con t1/t2
+      let teamAName = teamsInDb.find(dbName => dbName?.includes(t1.name)) || teamsInDb[0];
+      let teamBName = teamsInDb.find(n => n !== teamAName);
 
       const formatPlayer = (p) => ({
           name: p.player_name,
@@ -111,7 +103,7 @@ export default function MatchDetail({ match }) {
           playersT1: filtered.filter(s => s.team_name === teamAName).map(formatPlayer),
           playersT2: filtered.filter(s => s.team_name === teamBName).map(formatPlayer)
       };
-  }, [allStats, selectedMap]);
+  }, [allStats, selectedMap, t1, t2]);
 
   const Row = ({ p }) => {
     const { cover } = resolveAgentPair(p.agentImg);
@@ -149,12 +141,14 @@ export default function MatchDetail({ match }) {
       {/* HEADER: Score */}
       <div className="flex flex-col gap-4 mb-4 border-b border-white/10 pb-4">
         <div className="flex justify-between items-center">
+            {/* T1 */}
             <div className="flex items-center gap-4 flex-1">
                 <div className="text-right flex-1">
                     <div className="text-xl font-bold leading-none">{t1.name || "Team A"}</div>
                     <div className="flex justify-end mt-2 opacity-80"><SeriesDiamonds wins={wins1} side="right" /></div>
                 </div>
             </div>
+            {/* Score Central */}
             <div className="px-8 flex flex-col items-center">
                 <div className="text-4xl font-black tracking-widest text-white flex items-center gap-3">
                     <span className={wins1 > wins2 ? "text-accent" : "text-white"}>{wins1}</span>
@@ -163,6 +157,7 @@ export default function MatchDetail({ match }) {
                 </div>
                 <span className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">Final</span>
             </div>
+            {/* T2 */}
             <div className="flex items-center gap-4 flex-1">
                 <div className="text-left flex-1">
                     <div className="text-xl font-bold leading-none">{t2.name || "Team B"}</div>
@@ -171,14 +166,16 @@ export default function MatchDetail({ match }) {
             </div>
         </div>
 
-        {/* Chips de Resultados de Mapas */}
+        {/* CHIPS DE RESULTADOS DE MAPAS (SOLO SI HAY) */}
         {mapsResults.length > 0 && (
             <div className="flex justify-center flex-wrap gap-2">
-                {mapsResults.map((m) => (
-                    <div key={m.id} className="px-3 py-1 rounded bg-white/5 border border-white/5 text-xs flex items-center gap-2">
+                {mapsResults.map((m, i) => (
+                    <div key={i} className="px-3 py-1 rounded bg-white/5 border border-white/5 text-xs flex items-center gap-2">
                         <span className="text-gray-400 uppercase font-bold">{m.map_name}</span>
                         <span className="font-mono text-white">
-                            <span className={m.score_a > m.score_b ? "text-accent" : ""}>{m.score_a}</span>:<span className={m.score_b > m.score_a ? "text-accent" : ""}>{m.score_b}</span>
+                            <span className={m.score_a > m.score_b ? "text-accent" : ""}>{m.score_a}</span>
+                            <span className="text-gray-600 mx-1">:</span>
+                            <span className={m.score_b > m.score_a ? "text-accent" : ""}>{m.score_b}</span>
                         </span>
                     </div>
                 ))}
@@ -186,14 +183,14 @@ export default function MatchDetail({ match }) {
         )}
       </div>
 
-      {/* --- SELECTOR DE MAPAS (SOLO SI HAY MÁS DE 1) --- */}
+      {/* --- SELECTOR DE PESTAÑAS (Oculto si es Bo1 o solo hay 1 opcion) --- */}
       {availableMaps.length > 1 && (
-        <div className="flex gap-2 mb-6 overflow-x-auto pb-2 border-b border-white/5">
+        <div className="flex gap-2 mb-6 overflow-x-auto pb-2 border-b border-white/5 scrollbar-thin scrollbar-thumb-white/10">
             {availableMaps.map(mapName => (
                 <button
                     key={mapName}
                     onClick={() => setSelectedMap(mapName)}
-                    className={`px-4 py-2 text-xs font-bold uppercase tracking-wider rounded transition-all
+                    className={`px-4 py-2 text-xs font-bold uppercase tracking-wider rounded transition-all whitespace-nowrap
                         ${selectedMap === mapName 
                             ? "bg-accent text-black shadow-[0_0_15px_rgba(var(--accent-rgb),0.4)]" 
                             : "bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white"}`}
@@ -207,7 +204,10 @@ export default function MatchDetail({ match }) {
       {/* --- TABLAS --- */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
         <div>
-          <h3 className="text-xs font-bold text-accent uppercase tracking-wider mb-2">{t1.name}</h3>
+          <h3 className="text-xs font-bold text-accent uppercase tracking-wider mb-2 flex justify-between">
+            <span>{t1.name}</span>
+            <span className="text-gray-500 font-normal normal-case">{selectedMap}</span>
+          </h3>
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="text-left text-[10px] text-gray-500 uppercase">
@@ -224,7 +224,10 @@ export default function MatchDetail({ match }) {
           </table>
         </div>
         <div>
-          <h3 className="text-xs font-bold text-accent uppercase tracking-wider lg:text-right mb-2 w-full">{t2.name}</h3>
+          <h3 className="text-xs font-bold text-accent uppercase tracking-wider lg:text-right mb-2 w-full flex justify-between lg:justify-end gap-4">
+            <span className="lg:order-2">{t2.name}</span>
+            <span className="text-gray-500 font-normal normal-case lg:order-1">{selectedMap}</span>
+          </h3>
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="text-left text-[10px] text-gray-500 uppercase">
