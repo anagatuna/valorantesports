@@ -12,10 +12,14 @@ const DELAY_MS = 2000;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const clean = (s) => s ? s.replace(/[\n\t\r]/g, ' ').replace(/\s+/g, ' ').trim() : '';
+
+// Helper mejorado: Extrae números incluso si están pegados o sucios
 const extractInt = (str) => {
     if (!str) return 0;
+    // Intenta buscar un número aislado primero
     const match = str.match(/^(-?\d+)/);
-    return match ? parseInt(match[1]) : 0;
+    if (match) return parseInt(match[1]);
+    return 0;
 };
 
 async function obtenerIdsRecientes() {
@@ -69,9 +73,9 @@ async function scrapearPartido(matchId, index, total) {
         if (navItems.length > 0) {
             navItems.each((i, el) => {
                 const id = $(el).attr('data-game-id');
-                let cleanName = clean($(el).text()).replace(/^\d+\s+/, '').trim(); 
+                let rawText = clean($(el).text());
+                let cleanName = rawText.replace(/^\d+\s+/, '').trim(); 
                 
-                // Score del mapa desde el tab (ej: "Ascent 13-9")
                 let sA = 0, sB = 0;
                 const sc = cleanName.match(/(\d+)[:\-\s]+(\d+)/);
                 let nameOnly = cleanName;
@@ -89,15 +93,23 @@ async function scrapearPartido(matchId, index, total) {
             });
         } 
         
-        // Bo1 Fallback
         if (mapTabs.length === 0) {
             console.log("   ⚡ Bo1 detectado.");
             const fullText = $('body').text();
-            const mapsList = ["Ascent", "Bind", "Breeze", "Fracture", "Haven", "Icebox", "Lotus", "Pearl", "Split", "Sunset", "Abyss"];
+            // Lista ampliada de mapas
+            const mapsList = ["Ascent", "Bind", "Breeze", "Fracture", "Haven", "Icebox", "Lotus", "Pearl", "Split", "Sunset", "Abyss", "Showdown"];
             let detectedMap = "Unknown";
-            for (const m of mapsList) {
-                if (fullText.includes(`Map: ${m}`) || fullText.includes(`Decider: ${m}`)) {
-                    detectedMap = m; break;
+            
+            // Prioridad 1: "Map: X" en header
+            const headerMatch = fullText.match(/(?:Map|Decider)[:\s]+([a-zA-Z0-9]+)/i);
+            if (headerMatch) {
+                detectedMap = headerMatch[1];
+            } else {
+                // Prioridad 2: Fuerza bruta nombres conocidos
+                for (const m of mapsList) {
+                    if ($('.match-header-note').text().includes(m) || $('.match-header-event-series').text().includes(m)) {
+                        detectedMap = m; break;
+                    }
                 }
             }
             mapTabs.push({ id: 'all', cleanName: detectedMap, score_a: scoreA, score_b: scoreB });
@@ -105,7 +117,7 @@ async function scrapearPartido(matchId, index, total) {
 
         console.log(`   📂 Mapas: ${mapTabs.map(m=>m.cleanName).join(', ')}`);
 
-        // --- 3. EXTRAER JUGADORES Y RONDAS ---
+        // --- 3. EXTRAER DATOS ---
         const allStats = [];
         const mapsInfo = [];
         const processedMaps = new Set();
@@ -123,37 +135,26 @@ async function scrapearPartido(matchId, index, total) {
             }
             if (table.length === 0) continue;
 
-            // --- EXTRACCIÓN DE RONDAS (ATK/DEF) ---
-            // Buscamos dentro del contenedor del juego específico
+            // Rondas ATK/DEF
             let t1_t = 0, t1_ct = 0, t2_t = 0, t2_ct = 0;
-            
             if (map.cleanName !== 'All Maps') {
-                // VLR estructura: .vm-stats-game-header -> .team -> .team-score -> span.mod-t / span.mod-ct
-                // El primer equipo en el header suele corresponder a Team A
                 const teamsHeader = gameContainer.find('.vm-stats-game-header .team');
-                
                 if (teamsHeader.length >= 2) {
-                    // Team 1 (A)
                     const row1 = $(teamsHeader[0]);
+                    const row2 = $(teamsHeader[1]);
                     t1_t = extractInt(row1.find('.mod-t').text());
                     t1_ct = extractInt(row1.find('.mod-ct').text());
-                    
-                    // Team 2 (B)
-                    const row2 = $(teamsHeader[1]);
                     t2_t = extractInt(row2.find('.mod-t').text());
                     t2_ct = extractInt(row2.find('.mod-ct').text());
                 }
-                
                 mapsInfo.push({
-                    match_id: matchId, 
-                    map_name: map.cleanName, 
-                    score_a: map.score_a, 
-                    score_b: map.score_b,
+                    match_id: matchId, map_name: map.cleanName, 
+                    score_a: map.score_a, score_b: map.score_b,
                     t1_t, t1_ct, t2_t, t2_ct
                 });
             }
 
-            // --- COLUMNAS KDA ---
+            // --- DETECCIÓN DE COLUMNAS (MÉTODO ANCHOR) ---
             const headers = [];
             table.find('thead tr').last().find('th, td').each((i, el) => {
                 let txt = clean($(el).text()).toUpperCase();
@@ -161,20 +162,26 @@ async function scrapearPartido(matchId, index, total) {
                 headers.push(txt);
             });
 
-            let idxK = headers.indexOf('K');
-            let idxD = headers.indexOf('D');
-            let idxA = headers.indexOf('A');
-            
-            if (idxK === -1) idxK = headers.findIndex(h => h.startsWith('K') && !h.includes('KAST'));
-            if (idxD === -1) idxD = headers.findIndex(h => h.startsWith('D'));
-            if (idxA === -1) idxA = headers.findIndex(h => h.startsWith('A'));
+            // 1. Buscamos el ANCLA: La columna "K" (Kills)
+            // Es la más fiable. Ignoramos "KAST".
+            let idxK = headers.findIndex(h => (h === 'K' || h.startsWith('KILLS')) && !h.includes('KAST'));
 
-            if (idxK === -1 || idxD === -1) {
-                if (headers.length >= 7) { idxK = 4; idxD = 5; idxA = 6; }
-                else { idxK = 3; idxD = 4; idxA = 5; }
+            let idxD = -1, idxA = -1;
+
+            if (idxK !== -1) {
+                // ESTRATEGIA ANCLA:
+                // Si encontramos K, asumimos que D es K+1 y A es K+2
+                // Esto es universal en VLR (K -> D -> A)
+                idxD = idxK + 1;
+                idxA = idxK + 2;
+                // console.log(`      ⚓ Ancla K encontrada en ${idxK}. Asumiendo D=${idxD}, A=${idxA}`);
+            } else {
+                // Fallback de emergencia si no hay header visible (tablas raras)
+                // Estructura usual: Player(0), Team(1), R(2), ACS(3), K(4), D(5), A(6)
+                idxK = 4; idxD = 5; idxA = 6;
+                console.warn(`      ⚠️ Header K no encontrado. Usando fallback fijo: 4,5,6.`);
             }
 
-            // --- FILAS DE JUGADORES ---
             table.find('tbody tr').each((i, row) => {
                 const cols = $(row).find('td');
                 const name = clean($(row).find('.text-of').first().text()); 
@@ -185,8 +192,8 @@ async function scrapearPartido(matchId, index, total) {
                 if (agentSrc && !agentSrc.startsWith('http')) agentSrc = 'https://www.vlr.gg' + agentSrc;
 
                 const valK = extractInt(clean(cols.eq(idxK).text()));
-                const valD = extractInt(clean(cols.eq(idxD).text()));
-                const valA = extractInt(clean(cols.eq(idxA).text()));
+                const valD = extractInt(clean(cols.eq(idxD).text())); // Ahora usa K+1
+                const valA = extractInt(clean(cols.eq(idxA).text())); // Ahora usa K+2
 
                 allStats.push({
                     match_id: matchId,
@@ -209,7 +216,7 @@ async function scrapearPartido(matchId, index, total) {
             await supabase.from('match_stats').delete().eq('match_id', matchId);
             const { error } = await supabase.from('match_stats').insert(allStats);
             
-            if (!error) console.log(`   💾 Stats guardados.`);
+            if (!error) console.log(`   💾 Stats guardados (${allStats.length}).`);
             else console.error(`   ❌ Error DB: ${error.message}`);
         }
 
