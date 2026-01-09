@@ -42,12 +42,10 @@ function SeriesDiamonds({ wins, side }) {
 export default function MatchDetail({ match }) {
   const [t1, t2] = match?.teams ?? [{}, {}];
   
-  // Estado para TODOS los datos crudos
   const [allStats, setAllStats] = useState([]);
-  const [availableMaps, setAvailableMaps] = useState(["All Maps"]);
-  const [selectedMap, setSelectedMap] = useState("All Maps");
-  
-  const [mapsResults, setMapsResults] = useState([]); // Resultados 13-5
+  const [availableMaps, setAvailableMaps] = useState([]);
+  const [selectedMap, setSelectedMap] = useState("");
+  const [mapsResults, setMapsResults] = useState([]); 
   const [loading, setLoading] = useState(false);
 
   const wins1 = safe(match?.score1 ?? match?.series?.wins1 ?? match?.teams?.[0]?.score);
@@ -59,27 +57,32 @@ export default function MatchDetail({ match }) {
     async function fetchData() {
         setLoading(true);
         
-        // 1. Cargar Stats (Ahora traen map_name)
-        const { data: stats } = await supabase
-            .from('match_stats')
-            .select('*')
-            .eq('match_id', match.id);
+        // Cargar todo en paralelo
+        const [statsRes, mapsRes] = await Promise.all([
+            supabase.from('match_stats').select('*').eq('match_id', match.id),
+            supabase.from('match_maps').select('*').eq('match_id', match.id).order('id', { ascending: true })
+        ]);
 
-        // 2. Cargar Resultados de Mapas
-        const { data: mapsData } = await supabase
-            .from('match_maps')
-            .select('*')
-            .eq('match_id', match.id)
-            .order('id', { ascending: true });
-        
-        if (mapsData) setMapsResults(mapsData);
+        if (mapsRes.data) setMapsResults(mapsRes.data);
 
-        if (stats && stats.length > 0) {
-            setAllStats(stats);
+        if (statsRes.data && statsRes.data.length > 0) {
+            setAllStats(statsRes.data);
             
-            // Extraer lista de mapas únicos disponibles
-            const uniqueMaps = ["All Maps", ...new Set(stats.map(s => s.map_name).filter(m => m !== "All Maps"))];
+            // Obtener mapas únicos
+            // Si el scraper hizo su trabajo, en Bo1 solo vendrá "Ascent" (sin All Maps)
+            // En Bo3 vendrá "All Maps", "Ascent", "Bind"
+            let uniqueMaps = [...new Set(statsRes.data.map(s => s.map_name))];
+
+            // Ordenar: "All Maps" siempre primero si existe
+            uniqueMaps.sort((a, b) => {
+                if (a === 'All Maps') return -1;
+                if (b === 'All Maps') return 1;
+                return 0;
+            });
+
             setAvailableMaps(uniqueMaps);
+            // Seleccionar el primero por defecto
+            setSelectedMap(uniqueMaps[0]);
         }
         setLoading(false);
     }
@@ -87,11 +90,9 @@ export default function MatchDetail({ match }) {
     fetchData();
   }, [match?.id]);
 
-  // Filtrar jugadores según el mapa seleccionado
   const scoreboard = useMemo(() => {
-      if (allStats.length === 0) return { playersT1: [], playersT2: [] };
+      if (allStats.length === 0 || !selectedMap) return { playersT1: [], playersT2: [] };
 
-      // Filtramos por el mapa seleccionado
       const filtered = allStats.filter(s => s.map_name === selectedMap);
       
       const teamsInDb = [...new Set(filtered.map(s => s.team_name))];
@@ -111,7 +112,6 @@ export default function MatchDetail({ match }) {
           playersT2: filtered.filter(s => s.team_name === teamBName).map(formatPlayer)
       };
   }, [allStats, selectedMap]);
-
 
   const Row = ({ p }) => {
     const { cover } = resolveAgentPair(p.agentImg);
@@ -149,14 +149,12 @@ export default function MatchDetail({ match }) {
       {/* HEADER: Score */}
       <div className="flex flex-col gap-4 mb-4 border-b border-white/10 pb-4">
         <div className="flex justify-between items-center">
-            {/* Team 1 */}
             <div className="flex items-center gap-4 flex-1">
                 <div className="text-right flex-1">
                     <div className="text-xl font-bold leading-none">{t1.name || "Team A"}</div>
                     <div className="flex justify-end mt-2 opacity-80"><SeriesDiamonds wins={wins1} side="right" /></div>
                 </div>
             </div>
-            {/* Score */}
             <div className="px-8 flex flex-col items-center">
                 <div className="text-4xl font-black tracking-widest text-white flex items-center gap-3">
                     <span className={wins1 > wins2 ? "text-accent" : "text-white"}>{wins1}</span>
@@ -165,7 +163,6 @@ export default function MatchDetail({ match }) {
                 </div>
                 <span className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">Final</span>
             </div>
-            {/* Team 2 */}
             <div className="flex items-center gap-4 flex-1">
                 <div className="text-left flex-1">
                     <div className="text-xl font-bold leading-none">{t2.name || "Team B"}</div>
@@ -189,8 +186,8 @@ export default function MatchDetail({ match }) {
         )}
       </div>
 
-      {/* --- SELECTOR DE MAPAS (TABS) --- */}
-      {availableMaps.length > 0 && (
+      {/* --- SELECTOR DE MAPAS (SOLO SI HAY MÁS DE 1) --- */}
+      {availableMaps.length > 1 && (
         <div className="flex gap-2 mb-6 overflow-x-auto pb-2 border-b border-white/5">
             {availableMaps.map(mapName => (
                 <button
@@ -209,7 +206,6 @@ export default function MatchDetail({ match }) {
 
       {/* --- TABLAS --- */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
-        {/* T1 */}
         <div>
           <h3 className="text-xs font-bold text-accent uppercase tracking-wider mb-2">{t1.name}</h3>
           <table className="w-full text-sm border-collapse">
@@ -227,7 +223,6 @@ export default function MatchDetail({ match }) {
             </tbody>
           </table>
         </div>
-        {/* T2 */}
         <div>
           <h3 className="text-xs font-bold text-accent uppercase tracking-wider lg:text-right mb-2 w-full">{t2.name}</h3>
           <table className="w-full text-sm border-collapse">
