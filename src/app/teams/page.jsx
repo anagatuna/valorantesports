@@ -9,6 +9,15 @@ import { REGION_LOGOS } from '@/lib/regionLogos';
 
 const BUCKET_LABELS = ['AMERICAS', 'EMEA', 'PACIFIC', 'CN'];
 
+// ✅ FUNCIÓN HELPER: Convierte URLs externas a URLs del Proxy
+const getProxyUrl = (url) => {
+  if (!url) return '';
+  // Si ya es una ruta local (empieza con /), la dejamos igual
+  if (url.startsWith('/')) return url;
+  // Si es externa, la pasamos por el proxy
+  return `/api/image-proxy?url=${encodeURIComponent(url)}`;
+};
+
 function BucketCard({ regionKey, title, ev }) {
   return (
     <div className="rounded-2xl p-6 border border-white/10 bg-gradient-to-b from-[#611419] to-[#3a0b10]">
@@ -28,7 +37,8 @@ function BucketCard({ regionKey, title, ev }) {
 
       {ev?.img && (
         <img
-          src={ev.img}
+          // ✅ AQUI APLICAMOS EL PROXY
+          src={getProxyUrl(ev.img)}
           alt={ev.name}
           className="mt-3 rounded-lg border border-white/10 w-full h-auto"
         />

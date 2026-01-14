@@ -1,4 +1,3 @@
-// src/components/MatchCard.jsx
 "use client";
 import Image from "next/image";
 import Link from "next/link";
@@ -6,6 +5,13 @@ import { motion } from "framer-motion";
 
 function normalize(name) {
   return name?.toLowerCase().replace(/[\s\-_\.]+/g, "").trim();
+}
+
+// 🔴 AGREGAR ESTA FUNCIÓN
+function getProxyUrl(url) {
+  if (!url) return null;
+  if (url.startsWith('/')) return url; // Si es local, no tocar
+  return `/api/image-proxy?url=${encodeURIComponent(url)}`;
 }
 
 function findLogoFor(name, logoMap = {}, teamList = []) {
@@ -27,13 +33,12 @@ export default function MatchCard({ match, logos = {}, teamList = [] }) {
     return norm && norm !== "tbd";
   };
 
-  // LÓGICA DE PRIORIDAD DE LOGOS:
-  // 1. Logo traído de Supabase (VLR.gg)
-  // 2. Logo buscado en API Orlando (Cache)
-  // 3. Fallback (null)
-  
-  const logo1 = team1.logoDb || (isValidTeam(team1.name) ? findLogoFor(team1.name, logos, teamList) : null);
-  const logo2 = team2.logoDb || (isValidTeam(team2.name) ? findLogoFor(team2.name, logos, teamList) : null);
+  const rawLogo1 = team1.logoDb || (isValidTeam(team1.name) ? findLogoFor(team1.name, logos, teamList) : null);
+  const rawLogo2 = team2.logoDb || (isValidTeam(team2.name) ? findLogoFor(team2.name, logos, teamList) : null);
+
+  // 🔴 APLICAR EL PROXY AQUÍ
+  const logo1 = getProxyUrl(rawLogo1);
+  const logo2 = getProxyUrl(rawLogo2);
 
   const Card = (
     <motion.div
@@ -54,17 +59,17 @@ export default function MatchCard({ match, logos = {}, teamList = [] }) {
       <div className="flex items-center justify-between gap-2 mb-3">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 relative flex-shrink-0 flex items-center justify-center bg-white/5 rounded-full p-1">
-             {logo1 ? (
+              {logo1 ? (
                 <Image
-                  src={logo1}
+                  src={logo1} // Usa la variable con proxy
                   alt={team1.name}
                   fill
                   className="object-contain p-1"
-                  unoptimized
+                  unoptimized // 🔴 IMPORTANTE: Añadir esto
                 />
-             ) : (
+              ) : (
                 <div className="w-full h-full bg-white/10 rounded-full" />
-             )}
+              )}
           </div>
           <span className="text-white font-bold truncate max-w-[120px]">{team1.name ?? 'TBD'}</span>
         </div>
@@ -77,17 +82,17 @@ export default function MatchCard({ match, logos = {}, teamList = [] }) {
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 relative flex-shrink-0 flex items-center justify-center bg-white/5 rounded-full p-1">
-             {logo2 ? (
+              {logo2 ? (
                 <Image
-                  src={logo2}
+                  src={logo2} // Usa la variable con proxy
                   alt={team2.name}
                   fill
                   className="object-contain p-1"
-                  unoptimized
+                  unoptimized // 🔴 IMPORTANTE: Añadir esto
                 />
-             ) : (
+              ) : (
                 <div className="w-full h-full bg-white/10 rounded-full" />
-             )}
+              )}
           </div>
           <span className="text-white font-bold truncate max-w-[120px]">{team2.name ?? 'TBD'}</span>
         </div>
