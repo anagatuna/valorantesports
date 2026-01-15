@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ScheduleCard from "@/components/ScheduleCard";
 import { loadLogosFromCache, saveLogosToCache } from "@/utils/teamLogoCache";
 import MatchDetail from "@/components/MatchDetail";
+import { createClient } from '@supabase/supabase-js';
 
 /* ================== Mapas locales ================== */
 const MAP_IMAGES = {
@@ -79,29 +80,53 @@ function mapCompletedItem(seg = {}) {
   };
 }
 
+// Configura tu cliente (idealmente esto va en un archivo separado como lib/supabaseClient.js)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL, 
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
+
 /* ================== Logos ================== */
 async function ensureLogosFor(matches) {
   const needed = new Set();
-  for (const m of matches) (m.teams || []).forEach((t) => t?.name && needed.add(t.name.toLowerCase().trim()));
+  // Recolectamos los nombres de los equipos que necesitamos
+  for (const m of matches) {
+    (m.teams || []).forEach((t) => t?.name && needed.add(t.name.trim()));
+  }
+  
+  // Limpiamos nombres para buscar
+  const cleanNames = [...needed]; 
+  if (cleanNames.length === 0) return { logoMap: {}, teamList: [] };
 
   const cached = loadLogosFromCache();
   const logoMap = cached?.logoMap || {};
-  const normalize = (s) => s.toLowerCase().replace(/[\s\-_\.]+/g, "").trim();
-  const hasAll = () => [...needed].every((n) => logoMap[normalize(n)]);
-  if (hasAll()) return cached;
+  
+  // Filtramos los que YA tenemos en cache para no pedirlos de nuevo
+  const missingNames = cleanNames.filter(name => !logoMap[name.toLowerCase().replace(/[\s\-_\.]+/g, "").trim()]);
 
-  let page = 1;
-  while (page <= 5 && !hasAll()) {
-    const res = await fetch(`https://vlr.orlandomm.net/api/v1/teams?page=${page}&size=200`);
-    if (!res.ok) break;
-    const json = await res.json();
-    (json?.data || []).forEach((team) => {
-      const key = normalize(team?.name || "");
-      const img = team?.img || team?.image;
-      if (key && img) logoMap[key] = img;
-    });
-    page++;
+  if (missingNames.length > 0) {
+    // === CAMBIO CLAVE: Pedimos a Supabase en vez de a la API externa ===
+    // Asumo que tu tabla se llama 'teams' y tiene columna 'name' e 'image_url'
+    const { data: teamsData, error } = await supabase
+      .from('teams')
+      .select('name, image_url') // Ajusta los nombres de columnas a tu DB
+      .in('name', missingNames); // O usa un filtro .or() si los nombres son inexactos
+
+    if (teamsData) {
+      teamsData.forEach((team) => {
+        if (!team.image_url) return;
+        
+        const normalizedKey = team.name.toLowerCase().replace(/[\s\-_\.]+/g, "").trim();
+        
+        // AQUÍ USAMOS EL PROXY creado en el Paso 1
+        // En lugar de guardar la URL directa, guardamos la ruta a nuestro proxy
+        const proxiedUrl = `/api/image-proxy?url=${encodeURIComponent(team.image_url)}`;
+        
+        logoMap[normalizedKey] = proxiedUrl;
+      });
+    }
   }
+
   saveLogosToCache(logoMap, []);
   return { logoMap, teamList: [] };
 }
