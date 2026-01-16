@@ -250,4 +250,21 @@ async function scrapearPartido(matchId, index, total) {
     }
 }
 
+// --- PEGA ESTO AL FINAL DEL ARCHIVO, ANTES DE runBatch() ---
+
+async function runBatch() {
+    // 1. Obtenemos los IDs recientes
+    const ids = await obtenerIdsRecientes();
+    console.log(`🎯 Procesando ${ids.length} partidos...`);
+    
+    // 2. Iteramos uno por uno
+    for (let i = 0; i < ids.length; i++) {
+        await scrapearPartido(ids[i], i, ids.length);
+        // Esperamos un poco entre cada uno para no saturar
+        await sleep(DELAY_MS);
+    }
+    console.log("\n🏁 Fin.");
+}
+
+// Esta línea ya la tienes, asegúrate de que esté AL FINAL
 runBatch();
