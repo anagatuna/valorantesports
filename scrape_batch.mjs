@@ -1,8 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import * as cheerio from 'cheerio' 
 
-const supabaseUrl = process.env.SUPABASE_URL
-const supabaseKey = process.env.SUPABASE_KEY
+// Configuración de Supabase
+const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
 const supabase = createClient(supabaseUrl, supabaseKey)
 
 // --- CONFIGURACIÓN ---
@@ -15,11 +16,8 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 // Helper: Limpieza básica
 const clean = (s) => s ? s.replace(/[\n\t\r]/g, ' ').replace(/\s+/g, ' ').trim() : '';
 
-// --- HELPER CRÍTICO CORREGIDO ---
-// Antes fallaba si el texto era "/ 15". Ahora busca el primer grupo de dígitos donde sea.
 const extractInt = (str) => {
     if (!str) return 0;
-    // Busca cualquier secuencia de dígitos (\d+) en cualquier parte de la cadena
     const match = str.match(/(\d+)/);
     return match ? parseInt(match[0]) : 0;
 };
@@ -63,21 +61,26 @@ async function scrapearPartido(matchId, index, total) {
         const logoB = getLogo(1);
 
         // ============================================================
-        // 🟢 NUEVO: GUARDAR EQUIPOS EN TABLA 'teams'
+        // 🟢 CORRECCIÓN: Usar columna 'img' según tu base de datos
         // ============================================================
         const teamsToSave = [];
-        // Solo guardamos si tenemos nombre y logo
+        
+        // Ahora guardamos en 'img', coincidiendo con tu captura de pantalla
         if (teamA && logoA) teamsToSave.push({ name: teamA, img: logoA, updated_at: new Date() });
         if (teamB && logoB) teamsToSave.push({ name: teamB, img: logoB, updated_at: new Date() });
 
         if (teamsToSave.length > 0) {
-            // Upsert: Si el equipo ya existe, actualiza su logo e info
+            // Upsert: Actualiza si el nombre ya existe
             const { error: teamErr } = await supabase
                 .from('teams')
-                .upsert(teamsToSave, { onConflict: 'name' });
+                .upsert(teamsToSave, { onConflict: 'name' }); 
             
-            if (teamErr) console.error("   ⚠️ Error guardando teams:", teamErr.message);
-            else console.log("   ✅ Equipos actualizados en tabla 'teams'");
+            if (teamErr) {
+                // Si falla (ej: nombre duplicado sin constraint), lo mostramos pero seguimos
+                 console.error("   ⚠️ Error guardando teams:", teamErr.message);
+            } else {
+                 // console.log("   ✅ Teams actualizados.");
+            }
         }
         // ============================================================
 
@@ -124,7 +127,6 @@ async function scrapearPartido(matchId, index, total) {
         } 
         
         if (mapTabs.length === 0) {
-            console.log("   ⚡ Bo1 detectado.");
             const fullText = $('body').text();
             const mapsList = ["Ascent", "Bind", "Breeze", "Fracture", "Haven", "Icebox", "Lotus", "Pearl", "Split", "Sunset", "Abyss", "Showdown"];
             let detectedMap = "Unknown";
@@ -181,7 +183,7 @@ async function scrapearPartido(matchId, index, total) {
                 });
             }
 
-            // --- DETECCIÓN COLUMNAS (ANCHOR K) ---
+            // Columnas
             const headers = [];
             table.find('thead tr').last().find('th, td').each((i, el) => {
                 let txt = clean($(el).text()).toUpperCase();
@@ -196,7 +198,6 @@ async function scrapearPartido(matchId, index, total) {
                 idxA = idxK + 2;
             } else {
                 idxK = 4; idxD = 5; idxA = 6; 
-                console.warn("Using fallback columns");
             }
 
             table.find('tbody tr').each((i, row) => {
@@ -242,7 +243,7 @@ async function scrapearPartido(matchId, index, total) {
             const { error } = await supabase.from('match_stats').insert(allStats);
             
             if (!error) console.log(`   💾 Stats guardados (${allStats.length}).`);
-            else console.error(`   ❌ Error DB: ${error.message}`);
+            else console.error(`   ❌ Error DB Stats: ${error.message}`);
         }
 
     } catch (err) {
@@ -250,21 +251,15 @@ async function scrapearPartido(matchId, index, total) {
     }
 }
 
-// --- PEGA ESTO AL FINAL DEL ARCHIVO, ANTES DE runBatch() ---
-
 async function runBatch() {
-    // 1. Obtenemos los IDs recientes
     const ids = await obtenerIdsRecientes();
     console.log(`🎯 Procesando ${ids.length} partidos...`);
     
-    // 2. Iteramos uno por uno
     for (let i = 0; i < ids.length; i++) {
         await scrapearPartido(ids[i], i, ids.length);
-        // Esperamos un poco entre cada uno para no saturar
         await sleep(DELAY_MS);
     }
     console.log("\n🏁 Fin.");
 }
 
-// Esta línea ya la tienes, asegúrate de que esté AL FINAL
 runBatch();

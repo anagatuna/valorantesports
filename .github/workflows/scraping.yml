@@ -1,9 +1,9 @@
 name: Clonador de Valorant
 
 on:
-  workflow_dispatch:      # Botón manual
+  workflow_dispatch:
   schedule:
-    - cron: '*/30 * * * *' # Ejecutar cada 30 min
+    - cron: '*/30 * * * *' # Ejecuta cada 30 min
 
 jobs:
   scrape-vlr:
@@ -20,15 +20,8 @@ jobs:
       - name: Instalar dependencias
         run: npm install
 
-      # ESTE PASO ES NUEVO: Ejecuta el scrape de equipos
-      - name: Scrape Teams (Equipos)
-        env: 
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: node scrape_teams.mjs
-
-      # Tu script anterior (opcional, si quieres correr ambos)
-      - name: Scrape Batch (Partidos)
+      # Solo corremos el Batch, que ahora hace TODO (Partidos + Equipos)
+      - name: Scrape Batch (Partidos y Equipos)
         env: 
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
