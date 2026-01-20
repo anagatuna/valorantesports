@@ -1,4 +1,3 @@
-// src/components/HomeMatches.jsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -6,6 +5,12 @@ import ScheduleCard from "@/components/ScheduleCard";
 import { loadLogosFromCache, saveLogosToCache } from "@/utils/teamLogoCache";
 import MatchDetail from "@/components/MatchDetail";
 import { createClient } from '@supabase/supabase-js';
+
+// --- CONFIGURACIÓN SUPABASE ---
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 
 /* ================== Mapas locales ================== */
 const MAP_IMAGES = {
@@ -47,7 +52,6 @@ function normalizeMatch(raw = {}) {
 }
 
 function mapCompletedItem(seg = {}) {
-  // normaliza equipos a tu formato esperado
   const teams =
     Array.isArray(seg.teams) && seg.teams.length >= 2
       ? seg.teams
@@ -56,7 +60,6 @@ function mapCompletedItem(seg = {}) {
         { name: seg.team2, score: Number(seg.score2) },
       ];
 
-  // unifica alias del "ago"
   const time_completed =
     seg.time_completed ??
     seg.timeCompleted ??
@@ -68,7 +71,6 @@ function mapCompletedItem(seg = {}) {
     seg.ago ??
     null;
 
-  // el path de detalle
   const match_page = seg.match_page ?? seg.matchPage ?? seg.vlrUrl ?? seg.url ?? null;
 
   return {
@@ -80,53 +82,55 @@ function mapCompletedItem(seg = {}) {
   };
 }
 
-// Configura tu cliente (idealmente esto va en un archivo separado como lib/supabaseClient.js)
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL, 
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
-
-/* ================== Logos ================== */
+/* ================== Logos (SUPABASE + PROXY) ================== */
 async function ensureLogosFor(matches) {
   const needed = new Set();
-  // Recolectamos los nombres de los equipos que necesitamos
+  // Recolectamos nombres de equipos
   for (const m of matches) {
     (m.teams || []).forEach((t) => t?.name && needed.add(t.name.trim()));
   }
-  
-  // Limpiamos nombres para buscar
-  const cleanNames = [...needed]; 
+
+  const cleanNames = [...needed];
   if (cleanNames.length === 0) return { logoMap: {}, teamList: [] };
 
+  // 1. Cargar cache local (localStorage) para no saturar Supabase
   const cached = loadLogosFromCache();
   const logoMap = cached?.logoMap || {};
-  
-  // Filtramos los que YA tenemos en cache para no pedirlos de nuevo
-  const missingNames = cleanNames.filter(name => !logoMap[name.toLowerCase().replace(/[\s\-_\.]+/g, "").trim()]);
 
+  // 2. Filtrar qué nos falta
+  const missingNames = cleanNames.filter(name => {
+    const key = name.toLowerCase().replace(/[\s\-_\.]+/g, "").trim();
+    return !logoMap[key];
+  });
+
+  // 3. Si falta algo, pedirlo a Supabase
   if (missingNames.length > 0) {
-    // === CAMBIO CLAVE: Pedimos a Supabase en vez de a la API externa ===
-    // Asumo que tu tabla se llama 'teams' y tiene columna 'name' e 'image_url'
-    const { data: teamsData, error } = await supabase
-      .from('teams')
-      .select('name, image_url') // Ajusta los nombres de columnas a tu DB
-      .in('name', missingNames); // O usa un filtro .or() si los nombres son inexactos
+    try {
+      // Nota: Usamos la columna 'img' que es donde guardaste la URL de VLR
+      const { data: teamsData } = await supabase
+        .from('teams')
+        .select('name, img')
+        .in('name', missingNames);
 
-    if (teamsData) {
-      teamsData.forEach((team) => {
-        if (!team.image_url) return;
-        
-        const normalizedKey = team.name.toLowerCase().replace(/[\s\-_\.]+/g, "").trim();
-        
-        // AQUÍ USAMOS EL PROXY creado en el Paso 1
-        // En lugar de guardar la URL directa, guardamos la ruta a nuestro proxy
-        const proxiedUrl = `/api/image-proxy?url=${encodeURIComponent(team.image_url)}`;
-        
-        logoMap[normalizedKey] = proxiedUrl;
-      });
+      if (teamsData) {
+        teamsData.forEach((team) => {
+          if (!team.img) return;
+
+          const normalizedKey = team.name.toLowerCase().replace(/[\s\-_\.]+/g, "").trim();
+
+          // 🔴 AQUÍ APLICAMOS EL PROXY 🔴
+          // Convertimos la URL externa (https://owcdn...) en ruta interna (/api/image-proxy?url=...)
+          const proxiedUrl = `/api/image-proxy?url=${encodeURIComponent(team.img)}`;
+
+          logoMap[normalizedKey] = proxiedUrl;
+        });
+      }
+    } catch (err) {
+      console.error("Error fetching logos form Supabase:", err);
     }
   }
 
+  // 4. Guardar en cache local y retornar
   saveLogosToCache(logoMap, []);
   return { logoMap, teamList: [] };
 }
@@ -134,7 +138,6 @@ async function ensureLogosFor(matches) {
 /* ================== Live cache (persiste entre reloads) ================== */
 const LIVE_CACHE_KEY = "vlr_live_rounds_v2";
 
-/** Lee todo el cache */
 function readLiveCache() {
   try {
     const raw = localStorage.getItem(LIVE_CACHE_KEY);
@@ -143,13 +146,11 @@ function readLiveCache() {
     return {};
   }
 }
-/** Escribe todo el cache */
 function writeLiveCache(obj) {
   try {
     localStorage.setItem(LIVE_CACHE_KEY, JSON.stringify(obj));
   } catch { }
 }
-/** Clave estable por match + mapa */
 function liveCacheId(seg) {
   const url = (seg?.match_page || "").trim();
   const map = mapKeyOf(seg);
@@ -176,6 +177,7 @@ function teamsRoughEqual(a = "", b = "") {
 /* ================== Feed helpers ================== */
 async function fetchLiveSegmentsFromProxy() {
   try {
+    // Ajusta esta URL si tu endpoint de live score es diferente
     const r = await fetch(`/api/vlrgg/list?q=live_score&_=${Date.now()}`, { cache: "no-store" });
     if (!r.ok) return [];
     const j = await r.json();
@@ -250,7 +252,6 @@ function distributeByPattern(startSide, fromRound, wins) {
   return { ct, t };
 }
 
-/** Anti-regresión: si el snapshot tiene menos rondas que antes, ignorar (tolerancia 1) */
 function looksRegressive(prevTotals, curTotals) {
   return curTotals + 1 <= prevTotals;
 }
@@ -319,7 +320,6 @@ function mergeLiveRounds(prevRounds = null, seg = null, prevKey = "", prevMeta =
     }
   }
 
-  // wins/diamantes del feed
   const s = getSegSeries(seg) || { wins1: 0, wins2: 0, bestOf: null };
   const curW1 = Number(s.wins1 || 0);
   const curW2 = Number(s.wins2 || 0);
@@ -329,7 +329,6 @@ function mergeLiveRounds(prevRounds = null, seg = null, prevKey = "", prevMeta =
   const total1 = baseRounds.t1ct + baseRounds.t1t;
   const total2 = baseRounds.t2ct + baseRounds.t2t;
 
-  // Snap local a 13-x sólo si seguimos en el mismo mapa y ya había historial
   const canSnap = sameMap && prevTotal > 0;
   if ((curW1 > prevW1 || curW2 > prevW2) && canSnap) {
     const winner = curW1 > prevW1 ? 1 : 2;
@@ -345,7 +344,7 @@ function mergeLiveRounds(prevRounds = null, seg = null, prevKey = "", prevMeta =
         baseRounds.t2ct += dist.ct; baseRounds.t2t += dist.t;
       }
     }
-    baseMeta.mapWin = true; // cerramos el mapa localmente
+    baseMeta.mapWin = true;
   }
 
   const meta = {
@@ -365,7 +364,7 @@ function mergeLiveRounds(prevRounds = null, seg = null, prevKey = "", prevMeta =
   return { rounds: baseRounds, mapKey: key, meta };
 }
 
-// ⬇️ Pega estas funciones arriba (junto a otros helpers)
+// Helpers extra
 function inferSeriesTitleFromItem(m = {}) {
   const cand =
     m.seriesTitle ||
@@ -390,7 +389,6 @@ function decorateWithLocalMapAndSeries(m) {
   return ser ? { ...base, seriesTitle: ser } : base;
 }
 
-/* ================== Decoradores de mapa ================== */
 function getMapNameLocal(m = {}) {
   return (
     m.currentMap ||
@@ -411,7 +409,6 @@ function decorateWithLocalMap(m) {
   return name ? { ...m, currentMap: name, mapImage: resolveMapImage(name) } : m;
 }
 
-/* ================== Clasificación a Completed ================== */
 function isMapFinal(r) {
   const a = (r?.t1ct || 0) + (r?.t1t || 0);
   const b = (r?.t2ct || 0) + (r?.t2t || 0);
@@ -420,7 +417,6 @@ function isMapFinal(r) {
   return (mx >= 13 && mx - mn >= 2) || mx >= 14;
 }
 
-/* ================== Serie helpers ================== */
 function seriesTargetWins(bestOf) {
   return Math.ceil((Number(bestOf) || 3) / 2);
 }
@@ -430,8 +426,7 @@ function isSeriesOver(m) {
   return Number(m?.series?.wins1 || 0) >= tw || Number(m?.series?.wins2 || 0) >= tw;
 }
 
-/* ================== Post-Final → siguiente mapa / completed ================== */
-const FINAL_COOLDOWN_MS = 180_000; // 3 min
+const FINAL_COOLDOWN_MS = 180_000;
 
 function markFinalMeta(m) {
   const meta = { ...(m._mapMeta || {}) };
@@ -445,21 +440,18 @@ function shouldResetForNextMap(m, seg) {
   const segMapNum = Number(seg?.map_number ?? seg?.mapNumber ?? NaN);
   const curMapNum = Number(m?.mapNumber ?? NaN);
 
-  // rondas del snapshot actual
   const p1 =
     Number(seg?.team_1_round_ct || seg?.team1_round_ct || seg?.team_1_round_t || seg?.team1_round_t || 0) || 0;
   const p2 =
     Number(seg?.team_2_round_ct || seg?.team2_round_ct || seg?.team_2_round_t || seg?.team2_round_t || 0) || 0;
   const sum = p1 + p2;
 
-  // señales fuertes de NUEVO MAPA (reset inmediato)
   const mapNumberAdvanced = Number.isFinite(segMapNum) && Number.isFinite(curMapNum) && segMapNum > curMapNum;
   const mapNameChanged = !!segMap && segMap !== m.currentMap;
   const newRoundsOnNewMap = (mapNumberAdvanced || mapNameChanged) && sum >= 0;
 
   if (mapNumberAdvanced || mapNameChanged || newRoundsOnNewMap) return true;
 
-  // fallback: cooldown + 0–0
   if (!meta.finalTs) return false;
   const cooled = Date.now() - meta.finalTs >= FINAL_COOLDOWN_MS;
   const looksReset = sum === 0;
@@ -492,7 +484,7 @@ function resetMapState(m, seg) {
 
   return {
     ...m,
-    status: "LIVE", // ← seguimos en LIVE
+    status: "LIVE",
     currentMap: segMap || m.currentMap || null,
     mapImage: segMap ? resolveMapImage(segMap) : m.mapImage || null,
     _mapKey: newKey || m._mapKey,
@@ -502,7 +494,6 @@ function resetMapState(m, seg) {
   };
 }
 
-/* ================== Hidrataciones ================== */
 function getSegSeriesSafe(seg, m) {
   const s = getSegSeries(seg);
   return {
@@ -512,14 +503,11 @@ function getSegSeriesSafe(seg, m) {
   };
 }
 
-/** Promueve a LIVE + CT/T acumulado + SERIES */
 function hydrateWithSegmentsOnce(matches, segments) {
   if (!segments?.length) return matches;
 
-  // ⚠️ Agrega estos helpers cerca de los otros:
   const isTBD = (s = "") => !s || /^tbd$/i.test(String(s).trim());
   const parseUnixTs = (s = "") => {
-    // "2025-09-20 13:00:00" -> Date ms (asume UTC)
     const iso = String(s).replace(" ", "T") + "Z";
     const t = Date.parse(iso);
     return Number.isFinite(t) ? t : null;
@@ -541,12 +529,9 @@ function hydrateWithSegmentsOnce(matches, segments) {
 
     const hasUrl = !!m.vlrUrl;
     const hit = prepared.find((seg) => {
-      // 1) si ya tenemos url, empata directo
       if (hasUrl && seg.url && seg.url === (m.vlrUrl || "").trim()) return true;
 
-      // 2) emparejar por equipos (ambos conocidos)
-      const bothKnown =
-        !isTBD(seg.t1) && !isTBD(seg.t2) && tm1 && tm2;
+      const bothKnown = !isTBD(seg.t1) && !isTBD(seg.t2) && tm1 && tm2;
       if (bothKnown) {
         if (
           (seg.t1 === tm1 && seg.t2 === tm2) ||
@@ -556,7 +541,6 @@ function hydrateWithSegmentsOnce(matches, segments) {
         ) return true;
       }
 
-      // 3) fallback cuando hay TBD: pide al menos 1 equipo que coincida + cercanía de hora
       const oneMatches =
         (!!tm1 && teamsRoughEqual(seg.t1, tm1)) ||
         (!!tm1 && teamsRoughEqual(seg.t2, tm1)) ||
@@ -566,7 +550,6 @@ function hydrateWithSegmentsOnce(matches, segments) {
       if (oneMatches) {
         const segTs = parseUnixTs(seg.raw?.unix_timestamp);
         const mTs = typeof m.startTs === "number" ? m.startTs : null;
-        // tolerancia 15 minutos + mismo evento si está
         if (segTs && mTs && Math.abs(segTs - mTs) <= 15 * 60 * 1000) return true;
       }
       return false;
@@ -585,7 +568,6 @@ function hydrateWithSegmentsOnce(matches, segments) {
     return {
       ...m,
       status: nextStatus,
-      // ⛔️ En LIVE no “brinques” de mapa; lo hará resetMapState cuando haya señales claras.
       currentMap:
         nextStatus === "LIVE"
           ? (m.currentMap || segMap || null)
@@ -610,56 +592,6 @@ function hydrateWithSegmentsOnce(matches, segments) {
   });
 }
 
-/* ===== Robust TS parsing & 'ago' parsing ===== */
-function parseTsValue(v) {
-  if (v == null) return null;
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string") {
-    const n = Number(v);
-    if (Number.isFinite(n)) return n;
-    const t = Date.parse(v);
-    if (!Number.isNaN(t)) return t;
-  }
-  return null;
-}
-
-function parseAgoToMs(s = "") {
-  // soporta: "5h 41m ago", "22m ago", "2d 3h ago", "1d ago"
-  const tot = { d: 0, h: 0, m: 0 };
-  const rx = /(\d+)\s*(d|h|m)/gi;
-  let k;
-  while ((k = rx.exec(s))) {
-    const val = Number(k[1]);
-    const u = k[2].toLowerCase();
-    if (u === "d") tot.d += val;
-    if (u === "h") tot.h += val;
-    if (u === "m") tot.m += val;
-  }
-  return ((tot.d * 24 + tot.h) * 60 + tot.m) * 60_000;
-}
-
-function formatAgo(ms) {
-  const mins = Math.max(0, Math.floor(ms / 60000));
-  const d = Math.floor(mins / (60 * 24));
-  const h = Math.floor((mins - d * 24 * 60) / 60);
-  const mm = mins % 60;
-  if (d > 0) return h ? `${d}d ${h}h` : `${d}d`;
-  return h ? `${h}h ${mm}m` : `${mm}m`;
-}
-
-/* Preferimos startTs si existe; si no, lo cargamos del detalle */
-function getStartTsFromMatch(m = {}) {
-  const cand = [
-    m.startTs, m.start_time, m.startTime, m.scheduled_at, m.scheduledAt, m.time, m.date
-  ];
-  for (const c of cand) {
-    const ts = parseTsValue(c);
-    if (ts != null) return ts;
-  }
-  return null;
-}
-
-/** Precisión (mismo endpoint) */
 async function hydratePreciselyOnce(matches) {
   const segs = await fetchLiveSegmentsFromProxy();
   const prepared = segs.map((seg) => ({ raw: seg, url: (seg?.match_page || "").trim() }));
@@ -677,7 +609,6 @@ async function hydratePreciselyOnce(matches) {
 
     let next = { ...m, _mapKey: merged.mapKey, _mapMeta: merged.meta, rounds: merged.rounds };
 
-    // ⚠️ No cambies de mapa en LIVE; que lo haga resetMapState
     if (!m.currentMap && segMap) {
       next.currentMap = segMap;
       next.mapImage = resolveMapImage(segMap);
@@ -690,7 +621,6 @@ async function hydratePreciselyOnce(matches) {
   return updated;
 }
 
-/* ================== Componente ================== */
 const POLL_MS = 30_000;
 
 export default function HomeMatches({ today, next, completed }) {
@@ -698,11 +628,10 @@ export default function HomeMatches({ today, next, completed }) {
   const [teamList, setTeamList] = useState([]);
   const [openId, setOpenId] = useState(null);
 
-  const hasUpcoming = Boolean(today || next);      // estamos en main o matches
-  const hasCompleted = Boolean(completed);         // estamos en main o results
-  const limitToEight = hasUpcoming && hasCompleted; // solo en main
+  const hasUpcoming = Boolean(today || next);
+  const hasCompleted = Boolean(completed);
+  const limitToEight = hasUpcoming && hasCompleted;
 
-  // Demo LIVE (puedes quitarlo si no lo quieres)
   const demoLiveMatch = useMemo(() => {
     const currentMap = "icebox";
     return {
@@ -758,7 +687,7 @@ export default function HomeMatches({ today, next, completed }) {
     compRef.current = completedList;
   }, [completedList]);
 
-  // Primera hidratación + logos
+  // PRIMERA HIDRATACIÓN + CARGA DE LOGOS
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -776,36 +705,27 @@ export default function HomeMatches({ today, next, completed }) {
       const hyd2C = await hydratePreciselyOnce(hyd1C);
       if (cancelled) return;
 
-      // marcar finalizados
       const readyU = hyd2U.map((m) =>
         m.status === "LIVE" && (isMapFinal(m.rounds) || m?._mapMeta?.mapWin)
           ? { ...markFinalMeta(m), status: "FINAL" }
           : m
       );
 
-      // transición post-final → siguiente mapa o completed (inicial)
-      // marcar/avanzar mapa o finalizar serie
       const segsNow = await fetchLiveSegmentsFromProxy();
       const findSegFor = (m) =>
         segsNow.find((s) => (s?.match_page || "").trim() === (m?.vlrUrl || "").trim());
 
-      const progressedU = hyd2U.map((m) => {
+      const progressedU = readyU.map((m) => {
         const endedMap = isMapFinal(m.rounds) || m?._mapMeta?.mapWin;
         if (!endedMap) return m;
 
         const seg = findSegFor(m);
-
-        // si la serie ya terminó -> FINAL (para mandar a Completed)
         if (isSeriesOver(m)) {
           return { ...markFinalMeta(m), status: "FINAL" };
         }
-
-        // si NO terminó la serie -> reset inmediato al nuevo mapa (sin mostrar FINAL)
         if (seg && shouldResetForNextMap(m, seg)) {
           return resetMapState(m, seg);
         }
-
-        // no hay señales de nuevo mapa todavía: lo dejamos LIVE con el 13-x hasta que llegue el cambio
         return m;
       });
 
@@ -815,6 +735,7 @@ export default function HomeMatches({ today, next, completed }) {
       setUpcoming(stayUp);
       setCompletedList(hyd2C.concat(moved));
 
+      // ========== LOGOS (DB + PROXY) ==========
       const visible = [...stayUp, ...hyd2C];
       const cache = await ensureLogosFor(visible);
       if (!cancelled) {
@@ -827,7 +748,7 @@ export default function HomeMatches({ today, next, completed }) {
     };
   }, [baseUpcoming, baseCompleted]);
 
-  // Polling
+  // POLLING (Actualización automática)
   useEffect(() => {
     let cancelled = false;
 
@@ -842,7 +763,6 @@ export default function HomeMatches({ today, next, completed }) {
       const twoC = await hydratePreciselyOnce(oneC);
       if (cancelled) return;
 
-      // segs/ se obtienen arriba en cada efecto (ya los tienes)
       const findSegFor = (m) =>
         segs.find((s) => (s?.match_page || "").trim() === (m?.vlrUrl || "").trim());
 
@@ -851,19 +771,14 @@ export default function HomeMatches({ today, next, completed }) {
         if (!endedMap) return m;
 
         const seg = findSegFor(m);
-        const goneFromFeed = !seg; // el match ya no viene en el live feed
+        const goneFromFeed = !seg;
 
-        // Si la serie ya terminó (por diamantes/bo), o el match ya no aparece y la serie estaba decidida, mover a Completed
         if (isSeriesOver(m) || (goneFromFeed && isSeriesOver(m))) {
           return { ...markFinalMeta(m), status: "FINAL" };
         }
-
-        // Si NO terminó la serie y sí vemos el nuevo mapa en el feed, resetea de inmediato (LIVE→LIVE)
         if (seg && shouldResetForNextMap(m, seg)) {
           return resetMapState(m, seg);
         }
-
-        // Si no vemos aún el nuevo mapa, mantén LIVE con el 13-x local hasta el siguiente tick
         return m;
       });
 
@@ -886,14 +801,11 @@ export default function HomeMatches({ today, next, completed }) {
     <div className="home-matches">
       {/* Upcoming */}
       {hasUpcoming && (
-
-
         <section className="block">
           <div className="block__head">
             <h2 className="block__title text-3xl font-bold mb-10">Upcoming matches</h2>
           </div>
           {upcoming.length ? (
-            // HomeMatches.jsx (dentro del render de Upcoming)
             <div className="match-list">
               {upcoming.map((m) => {
                 const uid =
