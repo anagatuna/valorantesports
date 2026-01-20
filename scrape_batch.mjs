@@ -1,10 +1,39 @@
-import { createClient } from '@supabase/supabase-js'
-import * as cheerio from 'cheerio' 
+import { createClient } from '@supabase/supabase-js';
+import * as cheerio from 'cheerio';
+import dotenv from 'dotenv';
+import axios from 'axios';
+import https from 'https';
+import crypto from 'crypto';
 
-// Configuración de Supabase
-const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
-const supabase = createClient(supabaseUrl, supabaseKey)
+// 1. Cargar variables de entorno
+dotenv.config({ path: '.env.local' });
+
+// 🔴 FIX SSL: Agente para evitar el error "fetch failed" / "EPROTO"
+const httpsAgent = new https.Agent({
+    secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
+    rejectUnauthorized: false
+});
+
+// Configuración de Axios para parecer un navegador real
+const axiosClient = axios.create({
+    httpsAgent: httpsAgent,
+    headers: { 
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive'
+    }
+});
+
+const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+    console.error('❌ ERROR CRÍTICO: Faltan credenciales de Supabase.');
+    process.exit(1);
+}
+
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 // --- CONFIGURACIÓN ---
 const API_SOURCE = 'https://vlr.orlandomm.net/api/v1/results'; 
@@ -12,8 +41,6 @@ const MAX_MATCHES = 50;
 const DELAY_MS = 2000; 
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Helper: Limpieza básica
 const clean = (s) => s ? s.replace(/[\n\t\r]/g, ' ').replace(/\s+/g, ' ').trim() : '';
 
 const extractInt = (str) => {
@@ -24,27 +51,28 @@ const extractInt = (str) => {
 
 async function obtenerIdsRecientes() {
     try {
+        // Usamos axios también aquí por consistencia
         const [p1, p2] = await Promise.all([
-            fetch(`${API_SOURCE}?page=1`).then(r => r.json()),
-            fetch(`${API_SOURCE}?page=2`).then(r => r.json())
+            axios.get(`${API_SOURCE}?page=1`),
+            axios.get(`${API_SOURCE}?page=2`)
         ]);
-        const all = [...p1.data, ...p2.data];
+        const all = [...p1.data.data, ...p2.data.data];
         const unique = [...new Map(all.map(item => [item.id, item])).values()];
         return unique.slice(0, MAX_MATCHES).map(m => m.id);
-    } catch (e) { return []; }
+    } catch (e) { 
+        console.error("Error obteniendo IDs:", e.message);
+        return []; 
+    }
 }
 
 async function scrapearPartido(matchId, index, total) {
     console.log(`\n[${index + 1}/${total}] 🔍 ID: ${matchId}...`);
     try {
         const url = `https://www.vlr.gg/${matchId}`;
-        const response = await fetch(url, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36' }
-        });
-
-        if (!response.ok) { console.error(`Err HTTP ${response.status}`); return; }
-
-        const html = await response.text();
+        
+        // 🟢 CAMBIO: Usamos axiosClient en lugar de fetch
+        const response = await axiosClient.get(url);
+        const html = response.data;
         const $ = cheerio.load(html);
 
         // --- 1. DATOS GENERALES Y LOGOS ---
@@ -52,7 +80,8 @@ async function scrapearPartido(matchId, index, total) {
         const teamB = clean($('.match-header-link-name').eq(1).text());
         
         const getLogo = (idx) => {
-            let src = $('.match-header-link-img').eq(idx).attr('src');
+            const linkBlock = $('.match-header-link').eq(idx);
+            let src = linkBlock.find('img').first().attr('src');
             if (src && src.startsWith('//')) src = 'https:' + src;
             return src || null;
         };
@@ -62,26 +91,17 @@ async function scrapearPartido(matchId, index, total) {
 
         console.log(`   🕵️ DEBUG: ${teamA} (Logo: ${logoA ? '✅' : '❌'}) vs ${teamB} (Logo: ${logoB ? '✅' : '❌'})`);
 
+        // --- GUARDAR EQUIPOS ---
         const teamsToSave = [];
-        
-        // Ahora guardamos en 'img', coincidiendo con tu captura de pantalla
         if (teamA && logoA) teamsToSave.push({ name: teamA, img: logoA, updated_at: new Date() });
         if (teamB && logoB) teamsToSave.push({ name: teamB, img: logoB, updated_at: new Date() });
 
         if (teamsToSave.length > 0) {
-            // Upsert: Actualiza si el nombre ya existe
             const { error: teamErr } = await supabase
                 .from('teams')
                 .upsert(teamsToSave, { onConflict: 'name' }); 
-            
-            if (teamErr) {
-                // Si falla (ej: nombre duplicado sin constraint), lo mostramos pero seguimos
-                 console.error("   ⚠️ Error guardando teams:", teamErr.message);
-            } else {
-                 // console.log("   ✅ Teams actualizados.");
-            }
+            if (teamErr) console.error("   ⚠️ Error guardando teams:", teamErr.message);
         }
-        // ============================================================
 
         // Score
         let scoreA = 0, scoreB = 0;
@@ -116,7 +136,6 @@ async function scrapearPartido(matchId, index, total) {
                     sA = parseInt(sc[1]);
                     sB = parseInt(sc[2]);
                 }
-
                 if (nameOnly.toLowerCase().includes('all') || nameOnly.toLowerCase().includes('overview')) {
                     nameOnly = 'All Maps';
                     sA = scoreA; sB = scoreB;
@@ -135,9 +154,7 @@ async function scrapearPartido(matchId, index, total) {
                 detectedMap = headerMatch[1];
             } else {
                 for (const m of mapsList) {
-                    if ($('.match-header-note').text().includes(m) || $('.match-header-event-series').text().includes(m)) {
-                        detectedMap = m; break;
-                    }
+                    if ($('.match-header-note').text().includes(m) || $('.match-header-event-series').text().includes(m)) detectedMap = m;
                 }
             }
             mapTabs.push({ id: 'all', cleanName: detectedMap, score_a: scoreA, score_b: scoreB });
@@ -253,7 +270,6 @@ async function scrapearPartido(matchId, index, total) {
 async function runBatch() {
     const ids = await obtenerIdsRecientes();
     console.log(`🎯 Procesando ${ids.length} partidos...`);
-    
     for (let i = 0; i < ids.length; i++) {
         await scrapearPartido(ids[i], i, ids.length);
         await sleep(DELAY_MS);
