@@ -1,131 +1,122 @@
-const axios = require('axios');
-const cheerio = require('cheerio');
-const fs = require('fs');
-const path = require('path');
-const { PrismaClient } = require('@prisma/client'); // Si usas Prisma
+import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
 
-const prisma = new PrismaClient();
+// Configurar plugin Stealth para evadir bloqueos
+puppeteer.use(StealthPlugin());
 
-// --- CONFIGURACIÓN ---
-const TARGET_URL = 'https://vlr.gg/teams'; 
-// Ajusta estos selectores según la web real
-const SELECTORS = {
-    container: '.rank-item', 
-    name: '.ge-text', 
-    logo: 'img' 
-};
+// Cargar variables (Local o CI)
+dotenv.config({ path: '.env.local' });
 
-// Carpeta donde se guardarán (dentro de tu proyecto Next.js)
-const PUBLIC_DIR = path.join(process.cwd(), 'public');
-const TEAMS_DIR = '/teams'; // Ruta relativa para la DB
-const SAVE_PATH = path.join(PUBLIC_DIR, TEAMS_DIR);
+// 1. CONFIGURACIÓN DE SUPABASE (Compatible con tu YAML)
+const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// --- UTILIDADES ---
-
-// Normaliza nombres para usar como nombre de archivo (ej: "KRÜ Esports" -> "kru-esports")
-function getSafeFilename(name) {
-    return name.toLowerCase()
-        .replace(/[áàäâ]/g, 'a')
-        .replace(/[éèëê]/g, 'e')
-        .replace(/[íìïî]/g, 'i')
-        .replace(/[óòöô]/g, 'o')
-        .replace(/[úùüû]/g, 'u')
-        .replace(/ñ/g, 'n')
-        .replace(/[^a-z0-9]/g, '-') // Reemplaza símbolos por guiones
-        .replace(/-+/g, '-')        // Elimina guiones dobles
-        .replace(/^-|-$/g, '');     // Elimina guiones al inicio/final
+if (!supabaseUrl || !supabaseKey) {
+    console.error('❌ Faltan credenciales de Supabase (SUPABASE_URL o SUPABASE_KEY).');
+    process.exit(1);
 }
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Función para descargar imagen
-async function downloadImage(url, filename) {
-    try {
-        const filePath = path.join(SAVE_PATH, filename);
-        
-        // Si ya existe, nos la saltamos (opcional: quitar este if para forzar actualización)
-        if (fs.existsSync(filePath)) {
-            // console.log(`⏩ Imagen ya existe: ${filename}`);
-            return true;
-        }
-
-        const response = await axios({
-            url,
-            method: 'GET',
-            responseType: 'arraybuffer' // Importante para imágenes
-        });
-
-        fs.writeFileSync(filePath, response.data);
-        console.log(`⬇️  Descargada: ${filename}`);
-        return true;
-    } catch (e) {
-        console.error(`❌ Error descargando ${url}:`, e.message);
-        return false;
-    }
-}
-
-// --- MAIN ---
+const TARGET_URL = 'https://vlr.gg/rankings/na'; 
 
 async function main() {
-    // Asegurar que la carpeta existe
-    if (!fs.existsSync(SAVE_PATH)) {
-        fs.mkdirSync(SAVE_PATH, { recursive: true });
-    }
+    console.log(`🚀 Iniciando Scrape de Equipos en ${TARGET_URL}...`);
 
-    console.log(`🔍 Scrapeando ${TARGET_URL}...`);
-    
+    // 2. LANZAMIENTO DEL NAVEGADOR (Modo CI/Headless)
+    const browser = await puppeteer.launch({
+        headless: "new", // IMPORTANTE: "new" para GitHub Actions (sin ventana)
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--single-process',
+            '--disable-gpu'
+        ]
+    });
+
     try {
-        const { data } = await axios.get(TARGET_URL, {
-            headers: { 'User-Agent': 'Mozilla/5.0' }
-        });
-        const $ = cheerio.load(data);
-        const teams = [];
-
-        // 1. EXTRAER DATOS
-        $(SELECTORS.container).each((i, el) => {
-            const name = $(el).find(SELECTORS.name).text().trim();
-            let rawUrl = $(el).find(SELECTORS.logo).attr('src');
-
-            if (name && rawUrl) {
-                // Arreglar URLs relativas
-                if (rawUrl.startsWith('//')) rawUrl = 'https:' + rawUrl;
-                else if (rawUrl.startsWith('/')) rawUrl = 'https://vlr.gg' + rawUrl;
-                
-                teams.push({ name, rawUrl });
+        const page = await browser.newPage();
+        
+        // Bloquear carga de recursos innecesarios (CSS, Fuentes, Imágenes) para ir rápido
+        await page.setRequestInterception(true);
+        page.on('request', (req) => {
+            if (['image', 'stylesheet', 'font'].includes(req.resourceType())) {
+                req.abort();
+            } else {
+                req.continue();
             }
         });
 
-        console.log(`✅ Encontrados ${teams.length} equipos. Iniciando descarga...`);
-
-        // 2. PROCESAR Y GUARDAR
-        for (const team of teams) {
-            // Generar nombre de archivo: "leviatan.png"
-            const ext = path.extname(team.rawUrl) || '.png';
-            const fileName = `${getSafeFilename(team.name)}${ext}`;
-            
-            // Intentar descarga
-            const success = await downloadImage(team.rawUrl, fileName);
-
-            if (success) {
-                // Ruta que guardaremos en la DB (ej: "/teams/leviatan.png")
-                const dbPath = `${TEAMS_DIR}/${fileName}`;
-
-                // Guardar en DB
-                await prisma.team.upsert({
-                    where: { name: team.name },
-                    update: { logoDb: dbPath }, // Actualizamos con la ruta local
-                    create: {
-                        name: team.name,
-                        logoDb: dbPath
-                    }
-                });
-            }
+        await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        
+        // Esperar selector
+        try {
+            await page.waitForSelector('tr', { timeout: 15000 });
+        } catch (e) {
+            console.log("⚠️ Timeout esperando tabla. Intentando leer igual...");
         }
 
-        console.log('✨ Proceso finalizado.');
+        // 3. EXTRACCIÓN DE DATOS
+        const teamsFound = await page.evaluate(() => {
+            const rows = document.querySelectorAll('tr');
+            const data = [];
+            
+            rows.forEach(row => {
+                const nameEl = row.querySelector('.ge-text');
+                const imgEl = row.querySelector('img');
+                
+                if (nameEl && imgEl) {
+                    const name = nameEl.innerText.trim();
+                    let rawUrl = imgEl.src;
+                    
+                    if (name && rawUrl) {
+                        // Limpieza básica de URL
+                        if (rawUrl.startsWith('//')) rawUrl = 'https:' + rawUrl;
+                        if (!rawUrl.includes('mod_vlr')) { 
+                            data.push({ name, rawUrl });
+                        }
+                    }
+                }
+            });
+            return data;
+        });
+
+        console.log(`✅ Equipos encontrados: ${teamsFound.length}`);
+        await browser.close();
+
+        if (teamsFound.length === 0) {
+            console.log("❌ No se encontraron equipos. Posible bloqueo de Cloudflare.");
+            process.exit(0);
+        }
+
+        // 4. GUARDADO EN BASE DE DATOS
+        console.log(`💾 Guardando en Supabase...`);
+
+        for (const team of teamsFound) {
+            // NOTA: En GitHub Actions no descargamos la imagen al disco porque se borra.
+            // Guardamos la URL remota (rawUrl) directamente en la BD.
+            
+            const { error } = await supabase
+                .from('teams')
+                .upsert({ 
+                    name: team.name, 
+                    logoDb: team.rawUrl // Guardamos la URL de VLR directo
+                }, { onConflict: 'name' });
+
+            if (error) console.error(`❌ Error Supabase (${team.name}):`, error.message);
+        }
+
+        console.log('✨ Base de datos actualizada correctamente.');
 
     } catch (error) {
-        console.error('Fatal Error:', error);
-    } finally {
-        await prisma.$disconnect();
+        console.error('❌ Error fatal:', error);
+        await browser.close();
+        process.exit(1);
     }
 }
 
