@@ -60,9 +60,8 @@ async function scrapearPartido(matchId, index, total) {
         const logoA = getLogo(0);
         const logoB = getLogo(1);
 
-        // ============================================================
-        // 🟢 CORRECCIÓN: Usar columna 'img' según tu base de datos
-        // ============================================================
+        console.log(`   🕵️ DEBUG: ${teamA} (Logo: ${logoA ? '✅' : '❌'}) vs ${teamB} (Logo: ${logoB ? '✅' : '❌'})`);
+
         const teamsToSave = [];
         
         // Ahora guardamos en 'img', coincidiendo con tu captura de pantalla
