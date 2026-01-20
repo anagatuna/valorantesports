@@ -53,8 +53,6 @@ async function scrapearPartido(matchId, index, total) {
         const teamA = clean($('.match-header-link-name').eq(0).text());
         const teamB = clean($('.match-header-link-name').eq(1).text());
         
-        // EXTRAER LOGOS
-        // vlr.gg usa imágenes con rutas relativas tipo "//owcdn.net/..."
         const getLogo = (idx) => {
             let src = $('.match-header-link-img').eq(idx).attr('src');
             if (src && src.startsWith('//')) src = 'https:' + src;
@@ -63,6 +61,25 @@ async function scrapearPartido(matchId, index, total) {
 
         const logoA = getLogo(0);
         const logoB = getLogo(1);
+
+        // ============================================================
+        // 🟢 NUEVO: GUARDAR EQUIPOS EN TABLA 'teams'
+        // ============================================================
+        const teamsToSave = [];
+        // Solo guardamos si tenemos nombre y logo
+        if (teamA && logoA) teamsToSave.push({ name: teamA, img: logoA, updated_at: new Date() });
+        if (teamB && logoB) teamsToSave.push({ name: teamB, img: logoB, updated_at: new Date() });
+
+        if (teamsToSave.length > 0) {
+            // Upsert: Si el equipo ya existe, actualiza su logo e info
+            const { error: teamErr } = await supabase
+                .from('teams')
+                .upsert(teamsToSave, { onConflict: 'name' });
+            
+            if (teamErr) console.error("   ⚠️ Error guardando teams:", teamErr.message);
+            else console.log("   ✅ Equipos actualizados en tabla 'teams'");
+        }
+        // ============================================================
 
         // Score
         let scoreA = 0, scoreB = 0;
@@ -112,7 +129,6 @@ async function scrapearPartido(matchId, index, total) {
             const mapsList = ["Ascent", "Bind", "Breeze", "Fracture", "Haven", "Icebox", "Lotus", "Pearl", "Split", "Sunset", "Abyss", "Showdown"];
             let detectedMap = "Unknown";
             
-            // Prioridad: Header > Veto > Lista
             const headerMatch = fullText.match(/(?:Map|Decider)[:\s]+([a-zA-Z0-9]+)/i);
             if (headerMatch) {
                 detectedMap = headerMatch[1];
@@ -173,16 +189,12 @@ async function scrapearPartido(matchId, index, total) {
                 headers.push(txt);
             });
 
-            // Buscamos K
             let idxK = headers.findIndex(h => (h === 'K' || h.startsWith('KILLS')) && !h.includes('KAST'));
-            
             let idxD = -1, idxA = -1;
             if (idxK !== -1) {
-                // Si encontramos K, D es la siguiente y A la siguiente
                 idxD = idxK + 1;
                 idxA = idxK + 2;
             } else {
-                // Fallback clásico
                 idxK = 4; idxD = 5; idxA = 6; 
                 console.warn("Using fallback columns");
             }
@@ -196,7 +208,6 @@ async function scrapearPartido(matchId, index, total) {
                 let agentSrc = $(row).find('img').first().attr('src');
                 if (agentSrc && !agentSrc.startsWith('http')) agentSrc = 'https://www.vlr.gg' + agentSrc;
 
-                // Usamos el nuevo extractInt que ignora los Slash
                 const valK = extractInt(clean(cols.eq(idxK).text()));
                 const valD = extractInt(clean(cols.eq(idxD).text()));
                 const valA = extractInt(clean(cols.eq(idxA).text()));
@@ -213,17 +224,15 @@ async function scrapearPartido(matchId, index, total) {
         }
 
         // --- 4. GUARDAR ---
-        // --- 4. GUARDAR ---
         if (allStats.length > 0) {
-            // A. Match (AHORA GUARDAMOS LOGOS)
             await supabase.from('matches').upsert({
                 id: matchId, 
                 team_a: teamA, 
                 team_b: teamB, 
                 score_a: scoreA, 
                 score_b: scoreB, 
-                team_a_logo: logoA, // <--- NUEVO
-                team_b_logo: logoB, // <--- NUEVO
+                team_a_logo: logoA, 
+                team_b_logo: logoB, 
                 status: 'COMPLETED', 
                 last_update: new Date()
             });
@@ -241,14 +250,21 @@ async function scrapearPartido(matchId, index, total) {
     }
 }
 
+// --- PEGA ESTO AL FINAL DEL ARCHIVO, ANTES DE runBatch() ---
+
 async function runBatch() {
+    // 1. Obtenemos los IDs recientes
     const ids = await obtenerIdsRecientes();
     console.log(`🎯 Procesando ${ids.length} partidos...`);
+    
+    // 2. Iteramos uno por uno
     for (let i = 0; i < ids.length; i++) {
         await scrapearPartido(ids[i], i, ids.length);
+        // Esperamos un poco entre cada uno para no saturar
         await sleep(DELAY_MS);
     }
     console.log("\n🏁 Fin.");
 }
 
+// Esta línea ya la tienes, asegúrate de que esté AL FINAL
 runBatch();
