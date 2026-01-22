@@ -3,12 +3,16 @@ export const dynamic = 'force-dynamic';
 import { createClient } from '@supabase/supabase-js';
 import HomeMatches from "@/components/HomeMatches";
 
-// --- CONFIGURACIÓN SUPABASE ---
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 function adaptarDesdeDB(row) {
+  // Convertimos la fecha de UTC (DB) a milisegundos para ordenar
+  const ts = row.start_datetime 
+      ? new Date(row.start_datetime).getTime() 
+      : (row.last_update ? new Date(row.last_update).getTime() : Date.now());
+
   return {
     id: row.id,
     team1: row.team_a,
@@ -23,12 +27,7 @@ function adaptarDesdeDB(row) {
     event: "Valorant Match",
     match_page: `https://www.vlr.gg/${row.id}`, 
     vlrUrl: `https://www.vlr.gg/${row.id}`,
-    
-    // 🟢 CLAVE: Usar start_datetime. Si no existe, usamos last_update
-    startTs: row.start_datetime 
-      ? new Date(row.start_datetime).getTime() 
-      : (row.last_update ? new Date(row.last_update).getTime() : Date.now()),
-      
+    startTs: ts,
     time_completed: "Recently" 
   };
 }
@@ -37,37 +36,33 @@ const normalizeMatch = (raw = {}) => ({ ...raw });
 const normalizeCollection = (coll) => ({ items: (coll?.items || []).map(normalizeMatch) });
 
 export default async function HomePage() {
-  // 1. Pedimos TODO a Supabase
   const { data: dbMatches } = await supabase
     .from('matches')
     .select('*');
 
   const allMatches = (dbMatches || []).map(adaptarDesdeDB);
 
-  // 2. ORDENAMIENTO MANUAL (La clave para que LIVE salga arriba)
+  // --- ORDENAMIENTO ESTRICTO ---
   
-  // A. Filtramos LIVE
-  const liveMatches = allMatches.filter(m => m.status === 'LIVE');
+  // 1. Los LIVE van primero, ordenados por fecha
+  const liveMatches = allMatches
+    .filter(m => m.status === 'LIVE')
+    .sort((a, b) => a.startTs - b.startTs);
   
-  // B. Filtramos UPCOMING (y ordenamos por fecha ascendente: el más próximo primero)
+  // 2. Los UPCOMING van después, ordenados por fecha (el más próximo arriba)
   const upcomingMatches = allMatches
     .filter(m => m.status === 'UPCOMING')
     .sort((a, b) => a.startTs - b.startTs);
 
-  // C. Filtramos COMPLETED (y ordenamos por fecha descendente: el más reciente primero)
+  // 3. Los COMPLETED aparte
   const completedMatches = allMatches
     .filter(m => m.status === 'COMPLETED' || m.status === 'FINAL')
-    .sort((a, b) => b.startTs - a.startTs); // O usar ID si prefieres
+    .sort((a, b) => b.startTs - a.startTs);
 
-  // 3. ARMAMOS LAS COLECCIONES
-  
-  // En 'today' ponemos PRIMERO los LIVE, luego los UPCOMING
+  // Fusionamos LIVE + UPCOMING en la sección 'today'
   const today = { items: [...liveMatches, ...upcomingMatches] };
-  
-  // 'completed' tal cual
   const completedRaw = { items: completedMatches };
 
-  // Normalizamos (tu lógica de frontend)
   const normToday = normalizeCollection(today);
   const normCompleted = normalizeCollection(completedRaw); 
 

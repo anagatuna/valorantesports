@@ -7,7 +7,7 @@ import crypto from 'crypto';
 
 dotenv.config({ path: '.env.local' });
 
-// --- CONFIGURACIÓN DE RED (Tu configuración de confianza) ---
+// Configuración de red (Fix SSL)
 const httpsAgent = new https.Agent({
     secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
     rejectUnauthorized: false
@@ -23,16 +23,12 @@ const axiosClient = axios.create({
     }
 });
 
-const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabase = createClient(
+    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 
-if (!supabaseUrl || !supabaseKey) {
-    console.error('❌ ERROR: Faltan credenciales de Supabase.');
-    process.exit(1);
-}
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-// --- FUENTES ---
+// Fuentes
 const API_RESULTS = 'https://vlr.orlandomm.net/api/v1/results'; 
 const API_UPCOMING = 'https://vlr.orlandomm.net/api/v1/matches';
 const MAX_MATCHES = 60; 
@@ -45,7 +41,7 @@ const extractInt = (str) => {
     return match ? parseInt(match[0]) : 0;
 };
 
-// 1. Obtener IDs de Pasados Y Futuros
+// Obtener IDs
 async function obtenerIdsRecientes() {
     console.log("📡 Obteniendo lista de partidos...");
     try {
@@ -56,10 +52,7 @@ async function obtenerIdsRecientes() {
         const all = [...(p1.data.data || []), ...(p2.data.data || [])];
         const unique = [...new Map(all.map(item => [item.id, item])).values()];
         return unique.slice(0, MAX_MATCHES).map(m => m.id);
-    } catch (e) { 
-        console.error("Error APIs:", e.message);
-        return []; 
-    }
+    } catch (e) { return []; }
 }
 
 async function scrapearPartido(matchId, index, total) {
@@ -69,7 +62,7 @@ async function scrapearPartido(matchId, index, total) {
         const response = await axiosClient.get(url);
         const $ = cheerio.load(response.data);
 
-        // --- Datos Generales ---
+        // Datos básicos
         const teamA = clean($('.match-header-link-name').eq(0).text());
         const teamB = clean($('.match-header-link-name').eq(1).text());
         const getLogo = (idx) => {
@@ -80,29 +73,35 @@ async function scrapearPartido(matchId, index, total) {
         const logoA = getLogo(0);
         const logoB = getLogo(1);
 
-        // --- 🟢 FECHA EXACTA (Esto arregla que no salga la hora) ---
-        // Buscamos el timestamp UTC que VLR esconde en el HTML
+        // 🟢 FIX CRÍTICO DE HORA
+        // Extraemos la fecha UTC del atributo oculto
         let dateStr = $('.match-header-date .moment-tz-convert').attr('data-utc-ts');
         let startDateTime = null;
+        
         if (dateStr) {
-            // Formato: "2025-01-22 15:00:00". Añadimos Z para UTC.
-            startDateTime = new Date(dateStr.replace(" ", "T") + "Z");
+            // VLR da: "2023-10-25 15:00:00"
+            // JS necesita: "2023-10-25T15:00:00Z" (Con T y Z)
+            const isoString = dateStr.trim().replace(" ", "T") + "Z";
+            startDateTime = new Date(isoString);
+            
+            // Verificación de seguridad: si es fecha inválida, usar null
+            if (isNaN(startDateTime.getTime())) startDateTime = null;
         }
 
-        // --- STATUS ---
+        // Estado
         let status = 'UPCOMING';
         const note = $('.match-header-vs-note').text().toLowerCase();
         if (note.includes('final') || note.includes('completed')) status = 'COMPLETED';
         else if ($('.match-header-vs-score').hasClass('mod-live')) status = 'LIVE';
 
-        // --- Score ---
+        // Score
         let scoreA = 0, scoreB = 0;
         const scoreMatch = $('.match-header-vs-score').text().trim().match(/(\d+)[:\-\s]+(\d+)/);
         if (scoreMatch) { scoreA = parseInt(scoreMatch[1]); scoreB = parseInt(scoreMatch[2]); }
 
-        console.log(`   📅 ${startDateTime ? startDateTime.toISOString() : '???'} | ${teamA} vs ${teamB} [${status}]`);
+        console.log(`   📅 ${startDateTime ? startDateTime.toISOString() : 'Sin Fecha'} | ${teamA} vs ${teamB} [${status}]`);
 
-        // --- Guardar Equipos ---
+        // Guardar Equipos
         const teamsToSave = [];
         if (teamA && logoA) teamsToSave.push({ name: teamA, img: logoA, updated_at: new Date() });
         if (teamB && logoB) teamsToSave.push({ name: teamB, img: logoB, updated_at: new Date() });
@@ -110,14 +109,14 @@ async function scrapearPartido(matchId, index, total) {
             await supabase.from('teams').upsert(teamsToSave, { onConflict: 'name' });
         }
 
-        // --- Guardar Match ---
+        // Guardar Partido
         await supabase.from('matches').upsert({
             id: matchId, 
             team_a: teamA, team_b: teamB, 
             score_a: scoreA, score_b: scoreB, 
             team_a_logo: logoA, team_b_logo: logoB, 
             status: status, 
-            start_datetime: startDateTime, // 👈 Importante
+            start_datetime: startDateTime, // 👈 Fecha corregida
             last_update: new Date()
         });
 
@@ -242,7 +241,7 @@ async function scrapearPartido(matchId, index, total) {
 
 async function runBatch() {
     const ids = await obtenerIdsRecientes();
-    console.log(`🎯 Procesando ${ids.length} partidos (Mezcla Pasados/Futuros)...`);
+    console.log(`🎯 Procesando ${ids.length} partidos...`);
     for (let i = 0; i < ids.length; i++) {
         await scrapearPartido(ids[i], i, ids.length);
         await sleep(DELAY_MS);
