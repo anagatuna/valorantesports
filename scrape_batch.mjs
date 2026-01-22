@@ -5,16 +5,14 @@ import axios from 'axios';
 import https from 'https';
 import crypto from 'crypto';
 
-// 1. Cargar variables de entorno
 dotenv.config({ path: '.env.local' });
 
-// 🔴 FIX SSL: Agente para evitar el error "fetch failed" / "EPROTO"
+// --- CONFIGURACIÓN DE RED (Tu configuración de confianza) ---
 const httpsAgent = new https.Agent({
     secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
     rejectUnauthorized: false
 });
 
-// Configuración de Axios para parecer un navegador real
 const axiosClient = axios.create({
     httpsAgent: httpsAgent,
     headers: { 
@@ -29,45 +27,37 @@ const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE
 const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
-    console.error('❌ ERROR CRÍTICO: Faltan credenciales de Supabase.');
+    console.error('❌ ERROR: Faltan credenciales de Supabase.');
     process.exit(1);
 }
-
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// --- CONFIGURACIÓN DE FUENTES (HÍBRIDO) ---
+// --- FUENTES ---
 const API_RESULTS = 'https://vlr.orlandomm.net/api/v1/results'; 
-const API_UPCOMING = 'https://vlr.orlandomm.net/api/v1/matches'; // 👈 Nueva fuente
+const API_UPCOMING = 'https://vlr.orlandomm.net/api/v1/matches';
 const MAX_MATCHES = 60; 
 const DELAY_MS = 2000; 
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const clean = (s) => s ? s.replace(/[\n\t\r]/g, ' ').replace(/\s+/g, ' ').trim() : '';
-
 const extractInt = (str) => {
-    if (!str) return 0;
-    const match = str.match(/(\d+)/);
+    const match = str?.match(/(\d+)/);
     return match ? parseInt(match[0]) : 0;
 };
 
-// 👇 MODIFICADO: Trae IDs de Pasados Y Futuros
+// 1. Obtener IDs de Pasados Y Futuros
 async function obtenerIdsRecientes() {
-    console.log("📡 Obteniendo lista de partidos (Pasados y Futuros)...");
+    console.log("📡 Obteniendo lista de partidos...");
     try {
         const [p1, p2] = await Promise.all([
-            axios.get(API_RESULTS),   // Resultados pasados
-            axios.get(API_UPCOMING)   // Partidos futuros
+            axios.get(API_RESULTS),
+            axios.get(API_UPCOMING)
         ]);
-        
-        // Unimos las listas
         const all = [...(p1.data.data || []), ...(p2.data.data || [])];
-        
-        // Eliminamos duplicados
         const unique = [...new Map(all.map(item => [item.id, item])).values()];
-        
         return unique.slice(0, MAX_MATCHES).map(m => m.id);
     } catch (e) { 
-        console.error("Error obteniendo IDs:", e.message);
+        console.error("Error APIs:", e.message);
         return []; 
     }
 }
@@ -77,72 +67,57 @@ async function scrapearPartido(matchId, index, total) {
     try {
         const url = `https://www.vlr.gg/${matchId}`;
         const response = await axiosClient.get(url);
-        const html = response.data;
-        const $ = cheerio.load(html);
+        const $ = cheerio.load(response.data);
 
-        // --- 1. DATOS GENERALES Y LOGOS ---
+        // --- Datos Generales ---
         const teamA = clean($('.match-header-link-name').eq(0).text());
         const teamB = clean($('.match-header-link-name').eq(1).text());
-        
         const getLogo = (idx) => {
-            const linkBlock = $('.match-header-link').eq(idx);
-            let src = linkBlock.find('img').first().attr('src');
+            let src = $('.match-header-link').eq(idx).find('img').first().attr('src');
             if (src && src.startsWith('//')) src = 'https:' + src;
             return src || null;
         };
-
         const logoA = getLogo(0);
         const logoB = getLogo(1);
 
-        // --- 2. EXTRAER FECHA Y HORA (Para Upcoming) ---
-        // VLR pone la fecha en UTC dentro de este atributo
+        // --- 🟢 FECHA EXACTA (Esto arregla que no salga la hora) ---
+        // Buscamos el timestamp UTC que VLR esconde en el HTML
         let dateStr = $('.match-header-date .moment-tz-convert').attr('data-utc-ts');
         let startDateTime = null;
         if (dateStr) {
-            // dateStr suele venir como "2023-10-25 15:00:00". Le agregamos 'Z' para que sea UTC.
-            startDateTime = new Date(dateStr + "Z");
+            // Formato: "2025-01-22 15:00:00". Añadimos Z para UTC.
+            startDateTime = new Date(dateStr.replace(" ", "T") + "Z");
         }
 
-        // --- 3. DETERMINAR ESTADO ---
+        // --- STATUS ---
         let status = 'UPCOMING';
-        if ($('.match-header-vs-note').text().toLowerCase().includes('final')) status = 'COMPLETED';
+        const note = $('.match-header-vs-note').text().toLowerCase();
+        if (note.includes('final') || note.includes('completed')) status = 'COMPLETED';
         else if ($('.match-header-vs-score').hasClass('mod-live')) status = 'LIVE';
-
-        console.log(`   📅 ${startDateTime ? startDateTime.toISOString() : 'Sin fecha'} | ${teamA} vs ${teamB} [${status}]`);
-
-        // --- 4. GUARDAR EQUIPOS (Siempre, aunque sea upcoming) ---
-        const teamsToSave = [];
-        if (teamA && logoA) teamsToSave.push({ name: teamA, img: logoA, updated_at: new Date() });
-        if (teamB && logoB) teamsToSave.push({ name: teamB, img: logoB, updated_at: new Date() });
-
-        if (teamsToSave.length > 0) {
-            const { error: teamErr } = await supabase
-                .from('teams')
-                .upsert(teamsToSave, { onConflict: 'name' }); 
-            if (teamErr) console.error("   ⚠️ Error guardando teams:", teamErr.message);
-        }
 
         // --- Score ---
         let scoreA = 0, scoreB = 0;
-        const headerScoreText = $('.match-header-vs-score').text().trim(); 
-        const scoreMatch = headerScoreText.match(/(\d+)[:\-\s]+(\d+)/);
-        if (scoreMatch) {
-            scoreA = parseInt(scoreMatch[1]);
-            scoreB = parseInt(scoreMatch[2]);
+        const scoreMatch = $('.match-header-vs-score').text().trim().match(/(\d+)[:\-\s]+(\d+)/);
+        if (scoreMatch) { scoreA = parseInt(scoreMatch[1]); scoreB = parseInt(scoreMatch[2]); }
+
+        console.log(`   📅 ${startDateTime ? startDateTime.toISOString() : '???'} | ${teamA} vs ${teamB} [${status}]`);
+
+        // --- Guardar Equipos ---
+        const teamsToSave = [];
+        if (teamA && logoA) teamsToSave.push({ name: teamA, img: logoA, updated_at: new Date() });
+        if (teamB && logoB) teamsToSave.push({ name: teamB, img: logoB, updated_at: new Date() });
+        if (teamsToSave.length > 0) {
+            await supabase.from('teams').upsert(teamsToSave, { onConflict: 'name' });
         }
 
-        // --- 5. GUARDAR PARTIDO (CRÍTICO: Fuera del check de stats) ---
-        // Guardamos la cabecera del partido (equipos, hora, status) SIEMPRE
+        // --- Guardar Match ---
         await supabase.from('matches').upsert({
             id: matchId, 
-            team_a: teamA, 
-            team_b: teamB, 
-            score_a: scoreA, 
-            score_b: scoreB, 
-            team_a_logo: logoA, 
-            team_b_logo: logoB, 
+            team_a: teamA, team_b: teamB, 
+            score_a: scoreA, score_b: scoreB, 
+            team_a_logo: logoA, team_b_logo: logoB, 
             status: status, 
-            start_datetime: startDateTime, // 👈 Guardamos la fecha exacta
+            start_datetime: startDateTime, // 👈 Importante
             last_update: new Date()
         });
 
