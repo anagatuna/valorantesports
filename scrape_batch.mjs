@@ -28,7 +28,6 @@ const supabase = createClient(
 );
 
 // --- CONFIGURACIÓN ---
-// Ya no usamos la API externa. Vamos directo a la fuente.
 const URL_UPCOMING = 'https://www.vlr.gg/matches'; 
 const URL_RESULTS = 'https://www.vlr.gg/matches/results';
 const MAX_MATCHES = 60; 
@@ -36,6 +35,13 @@ const DELAY_MS = 2000;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const clean = (s) => s ? s.replace(/[\n\t\r]/g, ' ').replace(/\s+/g, ' ').trim() : '';
+
+// 🟢 FIX: Agregamos de nuevo la función que faltaba
+const extractInt = (str) => {
+    if (!str) return 0;
+    const match = str.match(/(\d+)/);
+    return match ? parseInt(match[0]) : 0;
+};
 
 // --- 1. OBTENER IDs DIRECTAMENTE DE VLR.GG ---
 async function extraerIdsDePagina(url) {
@@ -77,7 +83,7 @@ async function obtenerIdsRecientes() {
     return unique.slice(0, MAX_MATCHES);
 }
 
-// --- 2. SCRAPING INDIVIDUAL (Igual que antes, con fix de hora) ---
+// --- 2. SCRAPING INDIVIDUAL ---
 async function scrapearPartido(matchId, index, total) {
     console.log(`\n[${index + 1}/${total}] 🔍 ID: ${matchId}...`);
     try {
