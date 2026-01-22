@@ -7,6 +7,7 @@ import crypto from 'crypto';
 
 dotenv.config({ path: '.env.local' });
 
+// --- CONFIGURACIÓN DE RED ---
 const httpsAgent = new https.Agent({
     secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
     rejectUnauthorized: false
@@ -15,7 +16,9 @@ const httpsAgent = new https.Agent({
 const axiosClient = axios.create({
     httpsAgent: httpsAgent,
     headers: { 
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Connection': 'keep-alive'
     }
 });
 
@@ -24,32 +27,57 @@ const supabase = createClient(
     process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-// Fuentes
-const API_RESULTS = 'https://vlr.orlandomm.net/api/v1/results'; 
-const API_UPCOMING = 'https://vlr.orlandomm.net/api/v1/matches';
+// --- CONFIGURACIÓN ---
+// Ya no usamos la API externa. Vamos directo a la fuente.
+const URL_UPCOMING = 'https://www.vlr.gg/matches'; 
+const URL_RESULTS = 'https://www.vlr.gg/matches/results';
 const MAX_MATCHES = 60; 
 const DELAY_MS = 2000; 
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const clean = (s) => s ? s.replace(/[\n\t\r]/g, ' ').replace(/\s+/g, ' ').trim() : '';
-const extractInt = (str) => {
-    const match = str?.match(/(\d+)/);
-    return match ? parseInt(match[0]) : 0;
-};
 
-async function obtenerIdsRecientes() {
-    console.log("📡 Obteniendo lista de partidos...");
+// --- 1. OBTENER IDs DIRECTAMENTE DE VLR.GG ---
+async function extraerIdsDePagina(url) {
     try {
-        const [p1, p2] = await Promise.all([
-            axios.get(API_RESULTS),
-            axios.get(API_UPCOMING)
-        ]);
-        const all = [...(p1.data.data || []), ...(p2.data.data || [])];
-        const unique = [...new Map(all.map(item => [item.id, item])).values()];
-        return unique.slice(0, MAX_MATCHES).map(m => m.id);
-    } catch (e) { return []; }
+        const { data } = await axiosClient.get(url);
+        const $ = cheerio.load(data);
+        const ids = [];
+
+        // Buscamos todos los enlaces que parecen partidos
+        $('a[href]').each((i, el) => {
+            const href = $(el).attr('href');
+            // Formato típico: /12345/team-a-vs-team-b
+            const match = href.match(/^\/(\d+)\//);
+            if (match && $(el).find('.match-item-vs').length > 0) { 
+                ids.push(match[1]); // Guardamos solo el ID numérico
+            }
+        });
+        return ids;
+    } catch (e) {
+        console.error(`❌ Error leyendo lista de ${url}:`, e.message);
+        return [];
+    }
 }
 
+async function obtenerIdsRecientes() {
+    console.log("📡 Escaneando vlr.gg (Upcoming + Results)...");
+    
+    // Obtenemos ambas listas en paralelo
+    const [upcomingIds, resultsIds] = await Promise.all([
+        extraerIdsDePagina(URL_UPCOMING),
+        extraerIdsDePagina(URL_RESULTS)
+    ]);
+
+    const all = [...upcomingIds, ...resultsIds];
+    // Eliminar duplicados
+    const unique = [...new Set(all)];
+    
+    console.log(`   ✅ Encontrados: ${upcomingIds.length} próximos, ${resultsIds.length} resultados.`);
+    return unique.slice(0, MAX_MATCHES);
+}
+
+// --- 2. SCRAPING INDIVIDUAL (Igual que antes, con fix de hora) ---
 async function scrapearPartido(matchId, index, total) {
     console.log(`\n[${index + 1}/${total}] 🔍 ID: ${matchId}...`);
     try {
@@ -57,6 +85,7 @@ async function scrapearPartido(matchId, index, total) {
         const response = await axiosClient.get(url);
         const $ = cheerio.load(response.data);
 
+        // Datos Generales
         const teamA = clean($('.match-header-link-name').eq(0).text());
         const teamB = clean($('.match-header-link-name').eq(1).text());
         const getLogo = (idx) => {
@@ -67,45 +96,43 @@ async function scrapearPartido(matchId, index, total) {
         const logoA = getLogo(0);
         const logoB = getLogo(1);
 
-        // 🟢 FIX CRÍTICO DE HORA: Extraer UTC timestamp
-        // VLR pone esto en el HTML: data-utc-ts="2025-01-22 15:00:00"
+        // FECHA UTC
         let dateStr = $('.match-header-date .moment-tz-convert').attr('data-utc-ts');
         let startDateTime = null;
-        
         if (dateStr) {
-            // Le agregamos la "Z" para decirle a la base de datos que esto es UTC (+0)
-            // Y reemplazamos el espacio por T para cumplir estándar ISO
             const isoString = dateStr.trim().replace(" ", "T") + "Z";
             startDateTime = new Date(isoString);
         }
 
+        // ESTADO
         let status = 'UPCOMING';
         const note = $('.match-header-vs-note').text().toLowerCase();
         if (note.includes('final') || note.includes('completed')) status = 'COMPLETED';
         else if ($('.match-header-vs-score').hasClass('mod-live')) status = 'LIVE';
 
+        // SCORE
         let scoreA = 0, scoreB = 0;
         const scoreMatch = $('.match-header-vs-score').text().trim().match(/(\d+)[:\-\s]+(\d+)/);
         if (scoreMatch) { scoreA = parseInt(scoreMatch[1]); scoreB = parseInt(scoreMatch[2]); }
 
         console.log(`   📅 ${startDateTime ? startDateTime.toISOString() : '???'} | ${teamA} vs ${teamB} [${status}]`);
 
-        // Upsert Equipos
+        // GUARDAR EN SUPABASE
         const teamsToSave = [];
         if (teamA && logoA) teamsToSave.push({ name: teamA, img: logoA, updated_at: new Date() });
         if (teamB && logoB) teamsToSave.push({ name: teamB, img: logoB, updated_at: new Date() });
+
         if (teamsToSave.length > 0) {
             await supabase.from('teams').upsert(teamsToSave, { onConflict: 'name' });
         }
 
-        // Upsert Match (con fecha corregida)
         await supabase.from('matches').upsert({
             id: matchId, 
             team_a: teamA, team_b: teamB, 
             score_a: scoreA, score_b: scoreB, 
             team_a_logo: logoA, team_b_logo: logoB, 
             status: status, 
-            start_datetime: startDateTime, // 👈 Fecha UTC real
+            start_datetime: startDateTime,
             last_update: new Date()
         });
 
