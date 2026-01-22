@@ -7,7 +7,6 @@ import crypto from 'crypto';
 
 dotenv.config({ path: '.env.local' });
 
-// Configuración de red (Fix SSL)
 const httpsAgent = new https.Agent({
     secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
     rejectUnauthorized: false
@@ -16,10 +15,7 @@ const httpsAgent = new https.Agent({
 const axiosClient = axios.create({
     httpsAgent: httpsAgent,
     headers: { 
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
 });
 
@@ -41,7 +37,6 @@ const extractInt = (str) => {
     return match ? parseInt(match[0]) : 0;
 };
 
-// Obtener IDs
 async function obtenerIdsRecientes() {
     console.log("📡 Obteniendo lista de partidos...");
     try {
@@ -62,7 +57,6 @@ async function scrapearPartido(matchId, index, total) {
         const response = await axiosClient.get(url);
         const $ = cheerio.load(response.data);
 
-        // Datos básicos
         const teamA = clean($('.match-header-link-name').eq(0).text());
         const teamB = clean($('.match-header-link-name').eq(1).text());
         const getLogo = (idx) => {
@@ -73,35 +67,30 @@ async function scrapearPartido(matchId, index, total) {
         const logoA = getLogo(0);
         const logoB = getLogo(1);
 
-        // 🟢 FIX CRÍTICO DE HORA
-        // Extraemos la fecha UTC del atributo oculto
+        // 🟢 FIX CRÍTICO DE HORA: Extraer UTC timestamp
+        // VLR pone esto en el HTML: data-utc-ts="2025-01-22 15:00:00"
         let dateStr = $('.match-header-date .moment-tz-convert').attr('data-utc-ts');
         let startDateTime = null;
         
         if (dateStr) {
-            // VLR da: "2023-10-25 15:00:00"
-            // JS necesita: "2023-10-25T15:00:00Z" (Con T y Z)
+            // Le agregamos la "Z" para decirle a la base de datos que esto es UTC (+0)
+            // Y reemplazamos el espacio por T para cumplir estándar ISO
             const isoString = dateStr.trim().replace(" ", "T") + "Z";
             startDateTime = new Date(isoString);
-            
-            // Verificación de seguridad: si es fecha inválida, usar null
-            if (isNaN(startDateTime.getTime())) startDateTime = null;
         }
 
-        // Estado
         let status = 'UPCOMING';
         const note = $('.match-header-vs-note').text().toLowerCase();
         if (note.includes('final') || note.includes('completed')) status = 'COMPLETED';
         else if ($('.match-header-vs-score').hasClass('mod-live')) status = 'LIVE';
 
-        // Score
         let scoreA = 0, scoreB = 0;
         const scoreMatch = $('.match-header-vs-score').text().trim().match(/(\d+)[:\-\s]+(\d+)/);
         if (scoreMatch) { scoreA = parseInt(scoreMatch[1]); scoreB = parseInt(scoreMatch[2]); }
 
-        console.log(`   📅 ${startDateTime ? startDateTime.toISOString() : 'Sin Fecha'} | ${teamA} vs ${teamB} [${status}]`);
+        console.log(`   📅 ${startDateTime ? startDateTime.toISOString() : '???'} | ${teamA} vs ${teamB} [${status}]`);
 
-        // Guardar Equipos
+        // Upsert Equipos
         const teamsToSave = [];
         if (teamA && logoA) teamsToSave.push({ name: teamA, img: logoA, updated_at: new Date() });
         if (teamB && logoB) teamsToSave.push({ name: teamB, img: logoB, updated_at: new Date() });
@@ -109,14 +98,14 @@ async function scrapearPartido(matchId, index, total) {
             await supabase.from('teams').upsert(teamsToSave, { onConflict: 'name' });
         }
 
-        // Guardar Partido
+        // Upsert Match (con fecha corregida)
         await supabase.from('matches').upsert({
             id: matchId, 
             team_a: teamA, team_b: teamB, 
             score_a: scoreA, score_b: scoreB, 
             team_a_logo: logoA, team_b_logo: logoB, 
             status: status, 
-            start_datetime: startDateTime, // 👈 Fecha corregida
+            start_datetime: startDateTime, // 👈 Fecha UTC real
             last_update: new Date()
         });
 
