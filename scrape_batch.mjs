@@ -35,9 +35,10 @@ if (!supabaseUrl || !supabaseKey) {
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// --- CONFIGURACIÓN ---
-const API_SOURCE = 'https://vlr.orlandomm.net/api/v1/results'; 
-const MAX_MATCHES = 50; 
+// --- CONFIGURACIÓN DE FUENTES (HÍBRIDO) ---
+const API_RESULTS = 'https://vlr.orlandomm.net/api/v1/results'; 
+const API_UPCOMING = 'https://vlr.orlandomm.net/api/v1/matches'; // 👈 Nueva fuente
+const MAX_MATCHES = 60; 
 const DELAY_MS = 2000; 
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -49,15 +50,21 @@ const extractInt = (str) => {
     return match ? parseInt(match[0]) : 0;
 };
 
+// 👇 MODIFICADO: Trae IDs de Pasados Y Futuros
 async function obtenerIdsRecientes() {
+    console.log("📡 Obteniendo lista de partidos (Pasados y Futuros)...");
     try {
-        // Usamos axios también aquí por consistencia
         const [p1, p2] = await Promise.all([
-            axios.get(`${API_SOURCE}?page=1`),
-            axios.get(`${API_SOURCE}?page=2`)
+            axios.get(API_RESULTS),   // Resultados pasados
+            axios.get(API_UPCOMING)   // Partidos futuros
         ]);
-        const all = [...p1.data.data, ...p2.data.data];
+        
+        // Unimos las listas
+        const all = [...(p1.data.data || []), ...(p2.data.data || [])];
+        
+        // Eliminamos duplicados
         const unique = [...new Map(all.map(item => [item.id, item])).values()];
+        
         return unique.slice(0, MAX_MATCHES).map(m => m.id);
     } catch (e) { 
         console.error("Error obteniendo IDs:", e.message);
@@ -69,8 +76,6 @@ async function scrapearPartido(matchId, index, total) {
     console.log(`\n[${index + 1}/${total}] 🔍 ID: ${matchId}...`);
     try {
         const url = `https://www.vlr.gg/${matchId}`;
-        
-        // 🟢 CAMBIO: Usamos axiosClient en lugar de fetch
         const response = await axiosClient.get(url);
         const html = response.data;
         const $ = cheerio.load(html);
@@ -89,9 +94,23 @@ async function scrapearPartido(matchId, index, total) {
         const logoA = getLogo(0);
         const logoB = getLogo(1);
 
-        console.log(`   🕵️ DEBUG: ${teamA} (Logo: ${logoA ? '✅' : '❌'}) vs ${teamB} (Logo: ${logoB ? '✅' : '❌'})`);
+        // --- 2. EXTRAER FECHA Y HORA (Para Upcoming) ---
+        // VLR pone la fecha en UTC dentro de este atributo
+        let dateStr = $('.match-header-date .moment-tz-convert').attr('data-utc-ts');
+        let startDateTime = null;
+        if (dateStr) {
+            // dateStr suele venir como "2023-10-25 15:00:00". Le agregamos 'Z' para que sea UTC.
+            startDateTime = new Date(dateStr + "Z");
+        }
 
-        // --- GUARDAR EQUIPOS ---
+        // --- 3. DETERMINAR ESTADO ---
+        let status = 'UPCOMING';
+        if ($('.match-header-vs-note').text().toLowerCase().includes('final')) status = 'COMPLETED';
+        else if ($('.match-header-vs-score').hasClass('mod-live')) status = 'LIVE';
+
+        console.log(`   📅 ${startDateTime ? startDateTime.toISOString() : 'Sin fecha'} | ${teamA} vs ${teamB} [${status}]`);
+
+        // --- 4. GUARDAR EQUIPOS (Siempre, aunque sea upcoming) ---
         const teamsToSave = [];
         if (teamA && logoA) teamsToSave.push({ name: teamA, img: logoA, updated_at: new Date() });
         if (teamB && logoB) teamsToSave.push({ name: teamB, img: logoB, updated_at: new Date() });
@@ -103,22 +122,31 @@ async function scrapearPartido(matchId, index, total) {
             if (teamErr) console.error("   ⚠️ Error guardando teams:", teamErr.message);
         }
 
-        // Score
+        // --- Score ---
         let scoreA = 0, scoreB = 0;
         const headerScoreText = $('.match-header-vs-score').text().trim(); 
         const scoreMatch = headerScoreText.match(/(\d+)[:\-\s]+(\d+)/);
-        
         if (scoreMatch) {
             scoreA = parseInt(scoreMatch[1]);
             scoreB = parseInt(scoreMatch[2]);
-        } else {
-            scoreA = $('.match-header-link.mod-1 .wf-score-point.mod-win').length;
-            scoreB = $('.match-header-link.mod-2 .wf-score-point.mod-win').length;
         }
 
-        console.log(`   ✅ MATCH: ${teamA} vs ${teamB}`);
+        // --- 5. GUARDAR PARTIDO (CRÍTICO: Fuera del check de stats) ---
+        // Guardamos la cabecera del partido (equipos, hora, status) SIEMPRE
+        await supabase.from('matches').upsert({
+            id: matchId, 
+            team_a: teamA, 
+            team_b: teamB, 
+            score_a: scoreA, 
+            score_b: scoreB, 
+            team_a_logo: logoA, 
+            team_b_logo: logoB, 
+            status: status, 
+            start_datetime: startDateTime, // 👈 Guardamos la fecha exacta
+            last_update: new Date()
+        });
 
-        // --- 2. DETECCIÓN DE MAPAS ---
+        // --- 6. DETECCIÓN DE MAPAS Y STATS (Solo si hay datos) ---
         let mapTabs = [];
         let navItems = $('.vm-stats-games-nav-item');
         if (navItems.length === 0) navItems = $('.js-map-switch');
@@ -127,7 +155,6 @@ async function scrapearPartido(matchId, index, total) {
             navItems.each((i, el) => {
                 const id = $(el).attr('data-game-id');
                 let cleanName = clean($(el).text()).replace(/^\d+\s+/, '').trim(); 
-                
                 let sA = 0, sB = 0;
                 const sc = cleanName.match(/(\d+)[:\-\s]+(\d+)/);
                 let nameOnly = cleanName;
@@ -142,27 +169,11 @@ async function scrapearPartido(matchId, index, total) {
                 }
                 mapTabs.push({ id, cleanName: nameOnly, score_a: sA, score_b: sB });
             });
-        } 
-        
-        if (mapTabs.length === 0) {
-            const fullText = $('body').text();
-            const mapsList = ["Ascent", "Bind", "Breeze", "Fracture", "Haven", "Icebox", "Lotus", "Pearl", "Split", "Sunset", "Abyss", "Showdown"];
-            let detectedMap = "Unknown";
-            
-            const headerMatch = fullText.match(/(?:Map|Decider)[:\s]+([a-zA-Z0-9]+)/i);
-            if (headerMatch) {
-                detectedMap = headerMatch[1];
-            } else {
-                for (const m of mapsList) {
-                    if ($('.match-header-note').text().includes(m) || $('.match-header-event-series').text().includes(m)) detectedMap = m;
-                }
-            }
-            mapTabs.push({ id: 'all', cleanName: detectedMap, score_a: scoreA, score_b: scoreB });
+        } else {
+             // Si no hay tabs (partido futuro), agregamos un placeholder
+             mapTabs.push({ id: 'all', cleanName: 'TBD', score_a: 0, score_b: 0 });
         }
 
-        console.log(`   📂 Mapas: ${mapTabs.map(m=>m.cleanName).join(', ')}`);
-
-        // --- 3. EXTRAER DATOS ---
         const allStats = [];
         const mapsInfo = [];
         const processedMaps = new Set();
@@ -172,17 +183,17 @@ async function scrapearPartido(matchId, index, total) {
             processedMaps.add(map.cleanName);
 
             let table = $(`.vm-stats-game[data-game-id="${map.id}"] table`);
-            let gameContainer = $(`.vm-stats-game[data-game-id="${map.id}"]`);
-            
             if (table.length === 0 && map.id === 'all') {
                 table = $('.vm-stats-game table').first();
-                gameContainer = $('.vm-stats-game').first();
             }
+            
+            // Si no hay tabla de stats (común en Upcoming), saltamos
             if (table.length === 0) continue;
 
-            // Rondas
+            // ... Extracción de stats ...
             let t1_t = 0, t1_ct = 0, t2_t = 0, t2_ct = 0;
-            if (map.cleanName !== 'All Maps') {
+            if (map.cleanName !== 'All Maps' && map.cleanName !== 'TBD') {
+                const gameContainer = $(`.vm-stats-game[data-game-id="${map.id}"]`);
                 const teamsHeader = gameContainer.find('.vm-stats-game-header .team');
                 if (teamsHeader.length >= 2) {
                     const row1 = $(teamsHeader[0]);
@@ -199,7 +210,7 @@ async function scrapearPartido(matchId, index, total) {
                 });
             }
 
-            // Columnas
+            // Players
             const headers = [];
             table.find('thead tr').last().find('th, td').each((i, el) => {
                 let txt = clean($(el).text()).toUpperCase();
@@ -209,12 +220,8 @@ async function scrapearPartido(matchId, index, total) {
 
             let idxK = headers.findIndex(h => (h === 'K' || h.startsWith('KILLS')) && !h.includes('KAST'));
             let idxD = -1, idxA = -1;
-            if (idxK !== -1) {
-                idxD = idxK + 1;
-                idxA = idxK + 2;
-            } else {
-                idxK = 4; idxD = 5; idxA = 6; 
-            }
+            if (idxK !== -1) { idxD = idxK + 1; idxA = idxK + 2; } 
+            else { idxK = 4; idxD = 5; idxA = 6; }
 
             table.find('tbody tr').each((i, row) => {
                 const cols = $(row).find('td');
@@ -240,19 +247,8 @@ async function scrapearPartido(matchId, index, total) {
             });
         }
 
-        // --- 4. GUARDAR ---
+        // --- 7. GUARDAR STATS (Solo si existen) ---
         if (allStats.length > 0) {
-            await supabase.from('matches').upsert({
-                id: matchId, 
-                team_a: teamA, 
-                team_b: teamB, 
-                score_a: scoreA, 
-                score_b: scoreB, 
-                team_a_logo: logoA, 
-                team_b_logo: logoB, 
-                status: 'COMPLETED', 
-                last_update: new Date()
-            });
             await supabase.from('match_maps').delete().eq('match_id', matchId);
             if (mapsInfo.length > 0) await supabase.from('match_maps').insert(mapsInfo);
             await supabase.from('match_stats').delete().eq('match_id', matchId);
@@ -260,6 +256,8 @@ async function scrapearPartido(matchId, index, total) {
             
             if (!error) console.log(`   💾 Stats guardados (${allStats.length}).`);
             else console.error(`   ❌ Error DB Stats: ${error.message}`);
+        } else {
+            console.log(`   ℹ️ Sin stats (Probablemente partido futuro).`);
         }
 
     } catch (err) {
@@ -269,7 +267,7 @@ async function scrapearPartido(matchId, index, total) {
 
 async function runBatch() {
     const ids = await obtenerIdsRecientes();
-    console.log(`🎯 Procesando ${ids.length} partidos...`);
+    console.log(`🎯 Procesando ${ids.length} partidos (Mezcla Pasados/Futuros)...`);
     for (let i = 0; i < ids.length; i++) {
         await scrapearPartido(ids[i], i, ids.length);
         await sleep(DELAY_MS);
