@@ -1,10 +1,8 @@
-// src/components/ScheduleCard.jsx
 "use client";
 
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { classifyTier } from "@/lib/tier";
 
 /* ===== Helpers deterministas ===== */
 const TIMEZONE = "America/Mexico_City";
@@ -14,7 +12,9 @@ const norm = (s) => s?.toLowerCase().replace(/[\s\-_\.]+/g, "").trim();
 function findLogo(name, map = {}, list = []) {
   const k = norm(name);
   if (!k) return null;
+  // 1. Buscar en el mapa de logos (que viene de Supabase + Proxy)
   if (map[k]) return map[k];
+  // 2. Fallback: Buscar en la lista de equipos
   for (const t of list) {
     const r = norm(t?.name);
     if (r && (r.includes(k) || k.includes(r))) return t?.img;
@@ -86,64 +86,15 @@ function tzAbbr(d) {
   }
 }
 
-function diffHM(ms) {
-  const m = Math.max(0, Math.floor(ms / 60000));
-  const h = Math.floor(m / 60);
-  const mm = m % 60;
-  return h ? `${h}h ${mm}m` : `${mm}m`;
-}
-
-function vctRegionLabel(name = "") {
-  const s = name.toLowerCase();
-  if (s.includes("americas")) return "VCT AMERICAS";
-  if (s.includes("emea")) return "VCT EMEA";
-  if (s.includes("pacific")) return "VCT PACIFIC";
-  if (s.includes("china") || s.includes("cn")) return "VCT CN";
-  return "VCT";
-}
-
-function tierLabel(eventName = "") {
-  const t = classifyTier(eventName);
-  if (t === "T1") return vctRegionLabel(eventName);
-  if (t === "T2") return "CHALLENGERS";
-  if (t === "GC") return "GAME CHANGERS";
-  return "LIGA";
-}
-
-function phaseFromEvent(e = "") {
-  const s = e.toLowerCase();
-  if (s.includes("regular")) return "REGULAR SEASON";
-  if (s.includes("group")) return "Group Stage";
-  if (s.includes("swiss")) return "SWISS STAGE";
-  if (s.includes("playoff")) return "PLAYOFFS";
-  if (s.includes("semifinal")) return "SEMIFINALS";
-  if (s.includes("final")) return "FINALS";
-  return "Match";
-}
-
 // Tags oficiales comunes
 const OFFICIAL_TAGS = new Map([
-  ["G2 ESPORTS", "G2"],
-  ["SENTINELS", "SEN"],
-  ["TEAM LIQUID", "TL"],
-  ["EDWARD GAMING", "EDG"],
-  ["EDWARD", "EDG"],
-  ["EDWARDGAMING", "EDG"],
-  ["DRX", "DRX"],
-  ["BILIBILI GAMING", "BLG"],
-  ["PAPER REX", "PRX"],
-  ["REX REGUM QEON", "RRQ"],
-  ["FNATIC", "FNC"],
-  ["GIANTX", "GX"],
-  ["MIBR", "MIBR"],
-  ["NRG", "NRG"],
-  ["LOUD", "LOUD"],
-  ["T1", "T1"],
-  ["GEN.G", "GEN"],
-  ["NATUS VINCERE", "NAVI"],
-  ["FUT ESPORTS", "FUT"],
-  ["DRAGON RANGER GAMING", "DRG"],
-  ["XI LAI GAMING", "XLG"],
+  ["G2 ESPORTS", "G2"], ["SENTINELS", "SEN"], ["TEAM LIQUID", "TL"],
+  ["EDWARD GAMING", "EDG"], ["EDWARD", "EDG"], ["EDWARDGAMING", "EDG"],
+  ["DRX", "DRX"], ["BILIBILI GAMING", "BLG"], ["PAPER REX", "PRX"],
+  ["REX REGUM QEON", "RRQ"], ["FNATIC", "FNC"], ["GIANTX", "GX"],
+  ["MIBR", "MIBR"], ["NRG", "NRG"], ["LOUD", "LOUD"], ["T1", "T1"],
+  ["GEN.G", "GEN"], ["NATUS VINCERE", "NAVI"], ["FUT ESPORTS", "FUT"],
+  ["DRAGON RANGER GAMING", "DRG"], ["XI LAI GAMING", "XLG"],
 ]);
 
 function officialTag(name = "") {
@@ -165,17 +116,18 @@ function officialTag(name = "") {
 /* ===== Helpers p/ startTs y "hace X" ===== */
 function parseTsValue(v) {
   if (v == null) return null;
-  if (typeof v === "number" && Number.isFinite(v)) return v;     // epoch ms/seg
+  if (typeof v === "number" && Number.isFinite(v)) return v;
   if (typeof v === "string") {
     const n = Number(v);
-    if (Number.isFinite(n)) return n;                            // "1717272000000" o "1717272000"
-    const t = Date.parse(v);                                     // ISO
+    if (Number.isFinite(n)) return n;
+    const t = Date.parse(v);
     if (!Number.isNaN(t)) return t;
   }
   return null;
 }
 
 function getStartTsFromMatch(m = {}) {
+  // Priorizamos m.startTs que viene limpio desde la DB (gracias al page.js)
   const cand = [
     m.startTs, m.start_time, m.startTime,
     m.scheduled_at, m.scheduledAt,
@@ -188,7 +140,6 @@ function getStartTsFromMatch(m = {}) {
   return null;
 }
 
-// "5h 41m ago", "22m ago", "2d 3h ago", "1d ago"
 function parseAgoToMs(s = "") {
   const tot = { d: 0, h: 0, m: 0 };
   const rx = /(\d+)\s*(d|h|m)/gi;
@@ -212,7 +163,6 @@ function formatAgo(ms) {
   return h ? `${h}h ${mm}m` : `${mm}m`;
 }
 
-// === bajo formatAgo(...) agrega:
 function getCompletedAgoStr(m = {}) {
   const s =
     m.time_completed ??
@@ -230,13 +180,11 @@ function getCompletedAgoStr(m = {}) {
 }
 
 function getEndTsFromMatch(m = {}, nowMs = Date.now()) {
-  // explícitos
   const explicit = [m.endTs, m.end_time, m.endTime, m.completedAt, m.finished_at];
   for (const c of explicit) {
     const ts = parseTsValue(c);
     if (ts != null) return ts;
   }
-  // derivado de "7h 21m ago"
   const ago = getCompletedAgoStr(m);
   if (ago) {
     const ms = parseAgoToMs(ago);
@@ -245,34 +193,23 @@ function getEndTsFromMatch(m = {}, nowMs = Date.now()) {
   return null;
 }
 
-// extrae un posible start desde el JSON del detalle (varios alias, seg/objeto/anidado)
 function pickStartFromDetail(payload) {
   const cand = [];
-
   const push = (v) => {
     const n = parseTsValue(v);
-    if (n != null) cand.push(n < 1e12 ? n * 1000 : n); // segundos → ms
+    if (n != null) cand.push(n < 1e12 ? n * 1000 : n);
   };
-
   const scan = (o) => {
     if (!o || typeof o !== "object") return;
     for (const [k, v] of Object.entries(o)) {
       const key = k.toLowerCase();
       if (typeof v === "object") scan(v);
-      else if (
-        /start|sched/.test(key) && (typeof v === "number" || typeof v === "string")
-      ) push(v);
-      else if (
-        /unix|timestamp/.test(key) && (typeof v === "number" || typeof v === "string")
-      ) push(v);
-      else if (
-        /time|date/.test(key) && (typeof v === "number" || typeof v === "string")
-      ) push(v);
+      else if (/start|sched/.test(key) && (typeof v === "number" || typeof v === "string")) push(v);
+      else if (/unix|timestamp/.test(key) && (typeof v === "number" || typeof v === "string")) push(v);
+      else if (/time|date/.test(key) && (typeof v === "number" || typeof v === "string")) push(v);
     }
   };
-
   scan(payload);
-  // heurística: preferimos valores en el pasado pero no absurdamente viejos
   const now = Date.now();
   cand.sort((a, b) => Math.abs(now - a) - Math.abs(now - b));
   return cand[0] ?? null;
@@ -281,27 +218,19 @@ function pickStartFromDetail(payload) {
 /* ===== Series (diamantes) ===== */
 function getBestOf(match, s1, s2) {
   const candidates = [
-    match?.series?.bestOf,
-    match?.bestOf,
-    match?.bo,
-    match?.maxMaps,
-    match?.series?.bo,
-    match?.format?.bestOf,
-    match?.format?.bo,
+    match?.series?.bestOf, match?.bestOf, match?.bo, match?.maxMaps,
+    match?.series?.bo, match?.format?.bestOf, match?.format?.bo,
     Array.isArray(match?.maps) ? match.maps.length : null,
-  ]
-    .map(Number)
-    .filter(Number.isFinite);
+  ].map(Number).filter(Number.isFinite);
   const fromData = candidates.find((v) => v === 3 || v === 5);
   if (fromData) return fromData;
-
   const m1 = Number(match?.series?.wins1 ?? s1 ?? 0);
   const m2 = Number(match?.series?.wins2 ?? s2 ?? 0);
   return Math.max(m1, m2) >= 3 ? 5 : 3;
 }
 
 function SeriesDiamonds({ wins = 0, bestOf = 3, side = "left" }) {
-  const total = Math.max(1, Math.ceil((Number(bestOf) || 3) / 2)); // Bo3→2, Bo5→3
+  const total = Math.max(1, Math.ceil((Number(bestOf) || 3) / 2));
   const w = Math.min(Math.max(0, Number(wins) || 0), total);
   return (
     <div className={`series series--${side}`}>
@@ -320,34 +249,17 @@ function isGenericLabel(s = "") {
 
 function resolveEventLoose(m = {}) {
   return (
-    m.event ||
-    m.event_name ||
-    m.tournament ||
-    m.tournament_name ||
-    m.league?.name ||
-    m.series?.event ||
-    m.stage?.event ||
-    m.competition?.name ||
-    ""
+    m.event || m.event_name || m.tournament || m.tournament_name ||
+    m.league?.name || m.series?.event || m.stage?.event || m.competition?.name || ""
   );
 }
 
 function buildEventFromPieces(m = {}) {
   const parts = [
-    m.stage?.name,
-    m.stage?.round,
-    m.bracket?.name,
-    m.bracket?.round_name,
-    m.group?.name,
-    m.group_round,
-    m.round_info || m.roundInfo,
-    m.series?.name,
-    m.series_name,
-  ]
-    .map(v => (v == null ? "" : String(v).trim()))
-    .filter(Boolean);
-
-  // Unifica separadores tipo "Playoffs : Lower Round 1" → "Playoffs · Lower Round 1"
+    m.stage?.name, m.stage?.round, m.bracket?.name, m.bracket?.round_name,
+    m.group?.name, m.group_round, m.round_info || m.roundInfo,
+    m.series?.name, m.series_name,
+  ].map(v => (v == null ? "" : String(v).trim())).filter(Boolean);
   const joined = parts.join(" · ").replace(/\s*[:|•]\s*/g, " · ").replace(/\s+/g, " ");
   return joined;
 }
@@ -355,31 +267,16 @@ function buildEventFromPieces(m = {}) {
 function getEventDisplay(m = {}) {
   const ev = String(resolveEventLoose(m) || "").trim();
   if (ev && !isGenericLabel(ev)) return ev;
-
-  // usa seriesTitle si no es genérico
   const ser =
-    m.seriesTitle ||
-    m.match_series ||
-    m.series_name ||
-    m.round_info ||
-    m.roundInfo ||
-    m.stage?.round ||
-    m.stage?.name ||
-    m.bracket?.round_name ||
-    m.bracket_round ||
-    m.group_round ||
-    m.group?.round ||
-    "";
+    m.seriesTitle || m.match_series || m.series_name || m.round_info || m.roundInfo ||
+    m.stage?.round || m.stage?.name || m.bracket?.round_name || m.bracket_round ||
+    m.group_round || m.group?.round || "";
   if (ser && !isGenericLabel(ser)) return String(ser).replace(/\s*[:|•]\s*/g, " · ").replace(/\s+/g, " ").trim();
-
-  // construye a partir de piezas
   const built = buildEventFromPieces(m);
   return isGenericLabel(built) ? "" : built;
 }
 
-// Normaliza separadores (: | • - – —) → ' · ' y colapsa espacios
-const unifySep = (s = "") =>
-  String(s).replace(/\s*[:|•\-–—]\s*/g, " · ").replace(/\s+/g, " ").trim();
+const unifySep = (s = "") => String(s).replace(/\s*[:|•\-–—]\s*/g, " · ").replace(/\s+/g, " ").trim();
 
 /* ===== Componente ===== */
 export default function ScheduleCard({ match, logos = {}, teamList = [], expanded = false, onToggle = () => { }, }) {
@@ -406,64 +303,49 @@ export default function ScheduleCard({ match, logos = {}, teamList = [], expande
     const raw = getStartTsFromMatch(match);
     return raw != null ? new Date(raw) : (startTsLocal ? new Date(startTsLocal) : null);
   }, [match, startTsLocal]);
+
+  // Si falta la hora, intentar buscarla en VLR (Fallback)
   useEffect(() => {
     let abort = false;
-
     async function loadStart() {
-      // Solo si NO tenemos startTs y sí tenemos match_page del feed de results
       const hasStart = getStartTsFromMatch(match) != null || startTsLocal != null;
+      // Solo buscamos si NO tenemos hora y es un partido completed con URL
       const isCompletedFeed = !!match.time_completed && !!match.match_page;
+      
       if (!hasStart && isCompletedFeed) {
         try {
-          // Ajusta este endpoint a tu backend/route real.
-          // Idea: un proxy a vlrggapi para detalle de match.
           const url = `/api/vlr/match?path=${encodeURIComponent(match.match_page)}`;
           const res = await fetch(url, { cache: "no-store" });
           if (!res.ok) return;
           const data = await res.json();
-
-          // intenta alias conocidos primero…
           let tsCandidate =
-            data?.data?.unix_time ??
-            data?.data?.start_unix ??
-            data?.data?.startTime ??
-            data?.data?.time_iso ??
-            data?.data?.start_iso ??
-            data?.data?.unix_timestamp ??
-            null;
-
-          // …y si no, busca profundo en todo el payload
+            data?.data?.unix_time ?? data?.data?.start_unix ?? data?.data?.startTime ??
+            data?.data?.time_iso ?? data?.data?.start_iso ?? data?.data?.unix_timestamp ?? null;
           if (tsCandidate == null) {
             tsCandidate = pickStartFromDetail(data);
           }
-
           const parsed = parseTsValue(tsCandidate);
           if (!abort && parsed != null) setStartTsLocal(parsed);
-        } catch {
-          // silencioso
-        }
+        } catch { }
       }
     }
-
     loadStart();
     return () => { abort = true; };
   }, [match, startTsLocal]);
 
   const isLive = match.status === "LIVE";
 
-  // arriba del render, después de calcular ts
+  // Calcular Tiempos
   const endTsMs = useMemo(() => getEndTsFromMatch(match, Date.now()), [match]);
   const endTs = endTsMs ? new Date(endTsMs) : null;
-  const displayTs = ts || endTs;          // usamos inicio si hay; si no, fin
-  const usingEnd = !ts && !!endTs;       // true si estamos mostrando el fin
-
+  const displayTs = ts || endTs;
+  
   const dateStr = mounted && displayTs ? ddMMM(displayTs) : "";
   const timeStr = mounted && displayTs ? tHM(displayTs) : "";
   const tzStr = mounted && displayTs ? tzAbbr(displayTs) : "";
 
   const statusStr = useMemo(() => {
     if (!mounted) return "";
-
     const nowMs = now ?? Date.now();
     const startNum = getStartTsFromMatch(match) ?? startTsLocal ?? null;
 
@@ -473,12 +355,17 @@ export default function ScheduleCard({ match, logos = {}, teamList = [], expande
 
     if (match.status === "UPCOMING") {
       if (startNum && startNum > nowMs) return formatAgo(startNum - nowMs);
+      // Fallback si no tenemos cálculo
       return match.in || "UPCOMING";
     }
 
-    // FINAL (Completed feed trae time_completed tipo "5h 41m ago")
+    // FINAL
     const agoStr = getCompletedAgoStr(match);
     if (agoStr) {
+      // Si ya viene formateado "5h ago" desde page.js, úsalo
+      if (agoStr.includes("ago")) return agoStr; 
+      
+      // Si viene crudo, calcúlalo
       const ms = parseAgoToMs(agoStr);
       return ms ? `${formatAgo(ms)} ago`
         : `${agoStr.replace(/\s*ago\s*$/i, "").trim()} ago`;
@@ -488,7 +375,7 @@ export default function ScheduleCard({ match, logos = {}, teamList = [], expande
 
   const evFull = useMemo(() => unifySep(getEventDisplay(match)), [match]);
 
-  /* ====== Split CT/T SIEMPRE desde match.rounds (estado propio) ====== */
+  /* ====== Split CT/T ====== */
   const t1ct = Number(match?.rounds?.t1ct ?? 0);
   const t1t = Number(match?.rounds?.t1t ?? 0);
   const t2ct = Number(match?.rounds?.t2ct ?? 0);
@@ -496,29 +383,11 @@ export default function ScheduleCard({ match, logos = {}, teamList = [], expande
 
   const rounds1 = t1ct + t1t;
   const rounds2 = t2ct + t2t;
-
-  // Solo mostrar split cuando el match está LIVE
   const showSplit = isLive;
 
   const wins1 = match.series?.wins1 ?? 0;
   const wins2 = match.series?.wins2 ?? 0;
   const bestOf = match.series?.bestOf ?? getBestOf(match, s1, s2);
-
-  const seriesTitle = (
-    match.seriesTitle ||
-    match.match_series ||
-    match.series?.name ||
-    match.series_name ||
-    match.round_info ||
-    match.roundInfo ||
-    match.stage?.round ||
-    match.stage?.name ||
-    match.bracket?.round_name ||
-    match.bracket_round ||
-    match.group_round ||
-    match.group?.round ||
-    ""
-  ).toString().replace(/\s+/g, " ").trim();
 
   const fmtRoundsCompact = (ct, t) => (
     <span className="score__rnd">
@@ -532,7 +401,6 @@ export default function ScheduleCard({ match, logos = {}, teamList = [], expande
 
   return (
     <div className={`sched sched--glass ${isLive ? "is-live" : ""} ${expanded ? "is-open" : ""}`}>
-      {/* ⬇️ NUEVO: overlay totalmente transparente que captura el click */}
       <button
         type="button"
         className="sched__click"
@@ -540,10 +408,8 @@ export default function ScheduleCard({ match, logos = {}, teamList = [], expande
         onClick={onToggle}
         onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onToggle()}
       />
-      {/* blobs decorativos */}
       <span className="sched__blob sched__blob--l" aria-hidden />
       <span className="sched__blob sched__blob--r" aria-hidden />
-
       <div className="sched__overlay" />
 
       {match.mapImage && (
@@ -563,12 +429,14 @@ export default function ScheduleCard({ match, logos = {}, teamList = [], expande
 
       {wm1 && (
         <div className="sched__wm sched__wm--left">
+          {/* 🔴 unoptimized: Clave para el proxy */}
           <Image src={wm1} alt="" width={160} height={160} unoptimized className="sched__wm-img" />
           <div className="sched__wm-fade sched__wm-fade--left" />
         </div>
       )}
       {wm2 && (
         <div className="sched__wm sched__wm--right">
+          {/* 🔴 unoptimized: Clave para el proxy */}
           <Image src={wm2} alt="" width={160} height={160} unoptimized className="sched__wm-img" />
           <div className="sched__wm-fade sched__wm-fade--right" />
         </div>
@@ -639,7 +507,6 @@ export default function ScheduleCard({ match, logos = {}, teamList = [], expande
           <span className="cta__status" suppressHydrationWarning>
             {statusStr}
           </span>
-          {/* {match.id && <Link href="#" className="cta__btn">More info</Link>} */}
         </div>
       </div>
     </div>
