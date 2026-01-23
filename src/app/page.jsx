@@ -7,11 +7,32 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+// --- HELPER: Calcula "hace cuánto" ---
+function calcularTiempoAtras(timestamp) {
+  if (!timestamp) return "Recently";
+  
+  const diffMs = Date.now() - timestamp;
+  // Si la diferencia es negativa (futuro), no aplica
+  if (diffMs < 0) return "Recently";
+
+  const mins = Math.floor(diffMs / 60000);
+  const hours = Math.floor(mins / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) return `${days}d ago`;
+  if (hours > 0) return `${hours}h ago`;
+  return `${mins}m ago`;
+}
+
+// --- ADAPTADOR ---
 function adaptarDesdeDB(row) {
-  // Convertimos la fecha de UTC (DB) a milisegundos para ordenar
+  // Obtenemos el timestamp real
   const ts = row.start_datetime 
       ? new Date(row.start_datetime).getTime() 
       : (row.last_update ? new Date(row.last_update).getTime() : Date.now());
+
+  // Calculamos el string "5h ago" dinámicamente
+  const timeAgoStr = calcularTiempoAtras(ts);
 
   return {
     id: row.id,
@@ -27,8 +48,12 @@ function adaptarDesdeDB(row) {
     event: "Valorant Match",
     match_page: `https://www.vlr.gg/${row.id}`, 
     vlrUrl: `https://www.vlr.gg/${row.id}`,
+    
     startTs: ts,
-    time_completed: "Recently" 
+    
+    time_completed: (row.status === 'COMPLETED' || row.status === 'FINAL') 
+      ? timeAgoStr 
+      : null 
   };
 }
 
@@ -42,24 +67,19 @@ export default async function HomePage() {
 
   const allMatches = (dbMatches || []).map(adaptarDesdeDB);
 
-  // --- ORDENAMIENTO ESTRICTO ---
-  
-  // 1. Los LIVE van primero, ordenados por fecha
+  // --- ORDENAMIENTO ---
   const liveMatches = allMatches
     .filter(m => m.status === 'LIVE')
     .sort((a, b) => a.startTs - b.startTs);
   
-  // 2. Los UPCOMING van después, ordenados por fecha (el más próximo arriba)
   const upcomingMatches = allMatches
     .filter(m => m.status === 'UPCOMING')
     .sort((a, b) => a.startTs - b.startTs);
 
-  // 3. Los COMPLETED aparte
   const completedMatches = allMatches
     .filter(m => m.status === 'COMPLETED' || m.status === 'FINAL')
     .sort((a, b) => b.startTs - a.startTs);
 
-  // Fusionamos LIVE + UPCOMING en la sección 'today'
   const today = { items: [...liveMatches, ...upcomingMatches] };
   const completedRaw = { items: completedMatches };
 

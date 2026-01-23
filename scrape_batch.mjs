@@ -106,7 +106,8 @@ async function scrapearPartido(matchId, index, total) {
         let dateStr = $('.match-header-date .moment-tz-convert').attr('data-utc-ts');
         let startDateTime = null;
         if (dateStr) {
-            const isoString = dateStr.trim().replace(" ", "T") + "Z";
+            // VLR nos da: "2026-01-23 13:25:00" (que en realidad es hora New York)
+            const isoString = dateStr.trim().replace(" ", "T") + "-05:00"; // Reemplazamos espacio por T y agregamos el offset de New York (-05:00)
             startDateTime = new Date(isoString);
         }
 
