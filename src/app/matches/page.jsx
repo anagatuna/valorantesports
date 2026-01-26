@@ -1,29 +1,60 @@
 //src/app/matches/page.jsx
 export const dynamic = 'force-dynamic';
 
-import { getUpcomingTodayAndNextFromVlrgg, getCompletedTodayOrPrevFromVlrgg } from "@/lib/vlrggFeed";
+import { createClient } from '@supabase/supabase-js';
 import HomeMatches from "@/components/HomeMatches";
 
-/* normalizador que respeta event si ya viene */
-function resolveEvent(raw = {}) {
-  return (
-    (raw.event && String(raw.event).trim()) ||      // ← quedará del results endpoint
-    (raw.tournament && String(raw.tournament).trim()) ||
-    (raw.league?.name && String(raw.league.name).trim()) ||
-    (raw.stage?.event && String(raw.stage.event).trim()) ||
-    (raw.series?.event && String(raw.series.event).trim()) ||
-    (raw.stage?.name && String(raw.stage.name).trim()) ||
-    ""
-  );
+// --- Configuración Supabase ---
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+// --- Adaptador (Misma lógica que usaste en el Home) ---
+function adaptarMatch(row) {
+  return {
+    id: row.id,
+    team1: { name: row.team_a, score: row.score_a },
+    team2: { name: row.team_b, score: row.score_b },
+    score1: row.score_a,
+    score2: row.score_b,
+    status: row.status,
+    event: row.tournament || "Valorant Match", // Usamos el campo tournament de la DB
+    startTs: row.start_datetime ? new Date(row.start_datetime).getTime() : Date.now(),
+    match_page: `https://www.vlr.gg/${row.id}`,
+  };
 }
-const normalizeMatch = (raw = {}) => ({ ...raw, event: resolveEvent(raw) });
-const normalizeCollection = (coll) => ({ items: (coll?.items || []).map(normalizeMatch) });
 
-export default async function HomePage() {
-  const { today, next } = await getUpcomingTodayAndNextFromVlrgg();
+const normalizeCollection = (items) => ({ items });
 
-  const normToday = normalizeCollection(today);
-  const normNext = normalizeCollection(next);
+export default async function MatchesPage() {
+  // 1. Traer partidos NO terminados (LIVE y UPCOMING)
+  const { data: rawMatches } = await supabase
+    .from('matches')
+    .select('*')
+    .in('status', ['LIVE', 'UPCOMING'])
+    .order('start_datetime', { ascending: true });
+
+  const allMatches = (rawMatches || []).map(adaptarMatch);
+
+  // 2. Clasificar lógica simple
+  // "Today" = Partidos EN VIVO o que empiezan en las próximas 24 horas
+  // "Next" = El resto
+  const now = Date.now();
+  const oneDay = 24 * 60 * 60 * 1000;
+
+  const todayMatches = [];
+  const nextMatches = [];
+
+  allMatches.forEach(m => {
+    if (m.status === 'LIVE' || (m.startTs - now < oneDay)) {
+      todayMatches.push(m);
+    } else {
+      nextMatches.push(m);
+    }
+  });
+
+  const normToday = normalizeCollection(todayMatches);
+  const normNext = normalizeCollection(nextMatches);
 
   return (
     <main className="max-w-7xl mx-auto px-6 py-10">

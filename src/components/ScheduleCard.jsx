@@ -7,7 +7,8 @@ import { useEffect, useMemo, useState } from "react";
 /* ===== Helpers deterministas ===== */
 const TIMEZONE = "America/Mexico_City";
 
-const norm = (s) => s?.toLowerCase().replace(/[\s\-_\.]+/g, "").trim();
+// Convertimos 's' a String() explícitamente y usamos '|| ""' por si es null
+const norm = (s) => String(s || "").toLowerCase().replace(/[\s\-_\.]+/g, "").trim();
 
 function findLogo(name, map = {}, list = []) {
   const k = norm(name);
@@ -99,7 +100,13 @@ const OFFICIAL_TAGS = new Map([
 
 function officialTag(name = "") {
   if (!name) return "";
-  const up = (name.normalize?.("NFD").replace(/[\u0300-\u036f]/g, "") || name).toUpperCase().trim();
+  const strName = String(name);
+
+  const up = strName
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .trim();
   if (OFFICIAL_TAGS.has(up)) return OFFICIAL_TAGS.get(up);
   if (/^EDWARD\s?GAMING|EDWARD$/i.test(name)) return "EDG";
   if (/^TEAM\s+LIQUID$/i.test(name)) return "TL";
@@ -110,7 +117,7 @@ function officialTag(name = "") {
   if (/^XI\s+LAI\s+GAMING$/i.test(name)) return "XLG";
   const words = up.split(/\s+/).filter((w) => !["TEAM", "GAMING", "ESPORTS", "CLUB"].includes(w));
   const letters = words.slice(0, 3).map((w) => w.replace(/[^A-Z0-9]/g, "").slice(0, 1)).join("");
-  return letters.length >= 2 && letters.length <= 4 ? letters : up.slice(0, 3);
+  return up;
 }
 
 /* ===== Helpers p/ startTs y "hace X" ===== */
