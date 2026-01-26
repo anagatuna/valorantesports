@@ -1,4 +1,3 @@
-//src/app/matches/page.jsx
 export const dynamic = 'force-dynamic';
 
 import { createClient } from '@supabase/supabase-js';
@@ -9,18 +8,32 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// --- Adaptador (Misma lógica que usaste en el Home) ---
+// --- Adaptador CORREGIDO ---
 function adaptarMatch(row) {
+  // Aseguramos que haya nombres por defecto
+  const t1Name = row.team_a || "TBA";
+  const t2Name = row.team_b || "TBA";
+
   return {
     id: row.id,
-    team1: { name: row.team_a, score: row.score_a },
-    team2: { name: row.team_b, score: row.score_b },
+    
+    // 1. Strings planos para evitar errores de React (Object as Child)
+    team1: t1Name,
+    team2: t2Name,
+    
+    // 2. Array 'teams' REQUERIDO por HomeMatches/ScheduleCard para pintar info
+    teams: [
+      { name: t1Name, score: row.score_a },
+      { name: t2Name, score: row.score_b }
+    ],
+
     score1: row.score_a,
     score2: row.score_b,
     status: row.status,
-    event: row.tournament || "Valorant Match", // Usamos el campo tournament de la DB
+    event: row.tournament || "Valorant Match",
     startTs: row.start_datetime ? new Date(row.start_datetime).getTime() : Date.now(),
     match_page: `https://www.vlr.gg/${row.id}`,
+    vlrUrl: `https://www.vlr.gg/${row.id}`, // Importante para la hidratación en tiempo real
   };
 }
 
@@ -37,8 +50,6 @@ export default async function MatchesPage() {
   const allMatches = (rawMatches || []).map(adaptarMatch);
 
   // 2. Clasificar lógica simple
-  // "Today" = Partidos EN VIVO o que empiezan en las próximas 24 horas
-  // "Next" = El resto
   const now = Date.now();
   const oneDay = 24 * 60 * 60 * 1000;
 
@@ -46,6 +57,7 @@ export default async function MatchesPage() {
   const nextMatches = [];
 
   allMatches.forEach(m => {
+    // Es "Today" si es HOY o si es LIVE
     if (m.status === 'LIVE' || (m.startTs - now < oneDay)) {
       todayMatches.push(m);
     } else {
