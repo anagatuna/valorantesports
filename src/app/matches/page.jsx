@@ -16,11 +16,11 @@ function adaptarMatch(row) {
 
   return {
     id: row.id,
-    
+
     // 1. Strings planos para evitar errores de React (Object as Child)
     team1: t1Name,
     team2: t2Name,
-    
+
     // 2. Array 'teams' REQUERIDO por HomeMatches/ScheduleCard para pintar info
     teams: [
       { name: t1Name, score: row.score_a },
@@ -56,8 +56,16 @@ export default async function MatchesPage() {
   const todayMatches = [];
   const nextMatches = [];
 
+  // Nueva lógica: Filtra zombis
+  const cutoff = now - (6 * 60 * 60 * 1000); // 6 horas en el pasado
+
   allMatches.forEach(m => {
-    // Es "Today" si es HOY o si es LIVE
+    // 1. Si el partido es UPCOMING pero empezó hace más de 6 horas, es un error (Zombie). Lo ignoramos.
+    if (m.status === 'UPCOMING' && m.startTs < cutoff) {
+      return;
+    }
+
+    // 2. Clasificación normal
     if (m.status === 'LIVE' || (m.startTs - now < oneDay)) {
       todayMatches.push(m);
     } else {
