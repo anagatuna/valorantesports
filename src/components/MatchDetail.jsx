@@ -117,21 +117,65 @@ export default function MatchDetail({ match }) {
         <td className="py-2 pr-2 w-[180px]">
           <div className="flex items-center gap-3">
             {/* Todos los agentes jugados (en "All Maps" puede ser mas de 1), lado a lado.
-                Hover sobre cada icono muestra al MISMO agente de cuerpo entero. */}
-            <div className="flex items-center gap-1 shrink-0">
+                Hover = tilt 3D del icono + el mismo agente de cuerpo entero sube por detras
+                (mismo mecanismo que codepen.io/gayane-gasparyan/pen/wvxewXO, a escala de icono). */}
+            <div className="flex items-center gap-2 shrink-0">
               {p.agentsList.map((agentRaw, idx) => {
                 const { cover, standing } = resolveAgentPair(agentRaw);
                 const name = agentKey(agentRaw);
                 return (
-                  <div key={idx} className="relative group/agent">
-                    <div className="w-9 h-9 relative rounded bg-gray-800 overflow-hidden border border-white/10 group-hover/agent:border-accent/50 transition-colors">
+                  <div key={idx} className="agent-card">
+                    <div className="agent-cover">
                       <Image src={cover} alt={name} fill className="object-cover" unoptimized />
                     </div>
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-16 h-24 opacity-0 scale-95 pointer-events-none
-                                     group-hover/agent:opacity-100 group-hover/agent:scale-100 transition-all duration-150 z-30
-                                     rounded overflow-hidden border border-accent/60 shadow-xl bg-gray-900">
+                    <div className="agent-character">
                       <Image src={standing} alt={`${name} de pie`} fill className="object-cover" unoptimized />
                     </div>
+                    <style jsx>{`
+                      .agent-card {
+                        position: relative;
+                        width: 36px;
+                        height: 36px;
+                        perspective: 600px;
+                      }
+                      .agent-cover {
+                        position: absolute;
+                        inset: 0;
+                        border-radius: 4px;
+                        overflow: hidden;
+                        background: #1f2937;
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                        transition: transform 0.35s ease, box-shadow 0.35s ease, border-color 0.35s ease;
+                      }
+                      .agent-card:hover .agent-cover {
+                        transform: translateY(-10%) rotateX(20deg) translateZ(0);
+                        box-shadow: 0 10px 18px -6px rgba(0, 0, 0, 0.7);
+                        border-color: rgba(var(--accent-rgb), 0.6);
+                      }
+                      .agent-character {
+                        position: absolute;
+                        left: 50%;
+                        bottom: 0;
+                        width: 52px;
+                        height: 78px;
+                        margin-left: -26px;
+                        border-radius: 4px;
+                        overflow: hidden;
+                        background: #111;
+                        border: 1px solid rgba(var(--accent-rgb), 0.5);
+                        box-shadow: 0 14px 24px -6px rgba(0, 0, 0, 0.75);
+                        opacity: 0;
+                        z-index: -1;
+                        pointer-events: none;
+                        transition: opacity 0.35s ease, transform 0.35s ease;
+                        transform: translate3d(0, 0, 0);
+                      }
+                      .agent-card:hover .agent-character {
+                        opacity: 1;
+                        z-index: 30;
+                        transform: translate3d(0, -65%, 40px);
+                      }
+                    `}</style>
                   </div>
                 );
               })}
