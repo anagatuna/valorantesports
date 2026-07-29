@@ -23,6 +23,9 @@ function resolveAgentPair(agentNameOrUrl) {
   const k = agentKey(agentNameOrUrl);
   return { cover: `/agents/${k}/${k}-1.webp` };
 }
+// Un jugador puede tener 2 agentes en la vista "All Maps" (uno por mapa jugado).
+// El scraper los guarda separados por "||" en la misma columna agent_img.
+const splitAgents = (raw = "") => String(raw).split('||').map(s => s.trim()).filter(Boolean);
 function SeriesDiamonds({ wins, side }) {
   const totalDots = wins > 2 ? 3 : 2; 
   return (
@@ -75,6 +78,13 @@ export default function MatchDetail({ match }) {
     fetchData();
   }, [match?.id]);
 
+  // Marcador del mapa actualmente seleccionado (evita repetir el 0:2 de la serie,
+  // que ya se ve en la card sin expandir). Si el tab es "All Maps" no hay marcador propio.
+  const selectedMapResult = useMemo(
+    () => mapsResults.find(m => m.map_name === selectedMap),
+    [mapsResults, selectedMap]
+  );
+
   const scoreboard = useMemo(() => {
       if (allStats.length === 0 || !selectedMap) return { playersT1: [], playersT2: [] };
       const filtered = allStats.filter(s => s.map_name === selectedMap);
@@ -83,13 +93,17 @@ export default function MatchDetail({ match }) {
       let teamAName = teamsInDb.find(dbName => dbName?.includes(t1.name)) || teamsInDb[0];
       let teamBName = teamsInDb.find(n => n !== teamAName);
 
-      const formatPlayer = (p) => ({
-          name: p.player_name,
-          agentName: agentKey(p.agent_img), 
-          agentImg: p.agent_img, 
-          k: p.k, d: p.d, a: p.a,
-          plusMinus: p.k - p.d
-      });
+      const formatPlayer = (p) => {
+          const agents = splitAgents(p.agent_img);
+          return {
+              name: p.player_name,
+              agentName: agentKey(agents[0] || p.agent_img),
+              agentImg: agents[0] || p.agent_img,
+              agentImg2: agents[1] || null,
+              k: p.k, d: p.d, a: p.a,
+              plusMinus: p.k - p.d
+          };
+      };
 
       return {
           playersT1: filtered.filter(s => s.team_name === teamAName).map(formatPlayer),
@@ -99,12 +113,22 @@ export default function MatchDetail({ match }) {
 
   const Row = ({ p }) => {
     const { cover } = resolveAgentPair(p.agentImg);
+    const cover2 = p.agentImg2 ? resolveAgentPair(p.agentImg2).cover : null;
     return (
       <tr className="border-b border-white/5 hover:bg-white/5 transition-colors group">
         <td className="py-2 pr-2 w-[180px]">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 relative rounded bg-gray-800 shrink-0 overflow-hidden border border-white/10 group-hover:border-accent/50 transition-colors">
                 <Image src={cover} alt={p.agentName} fill className="object-cover" unoptimized />
+                {cover2 && (
+                  <Image
+                    src={cover2}
+                    alt="agente secundario"
+                    fill
+                    unoptimized
+                    className="object-cover absolute inset-0 opacity-0 hover:opacity-100 transition-opacity duration-150"
+                  />
+                )}
             </div>
             <div className="flex flex-col leading-none justify-center">
               <span className="font-bold text-white text-sm mb-1">{p.name}</span>
@@ -140,14 +164,20 @@ export default function MatchDetail({ match }) {
                     <div className="flex justify-end mt-2 opacity-80"><SeriesDiamonds wins={wins1} side="right" /></div>
                 </div>
             </div>
-            {/* Score */}
+            {/* Score del mapa seleccionado (la serie ya se ve en la card sin expandir) */}
             <div className="px-8 flex flex-col items-center">
-                <div className="text-4xl font-black tracking-widest text-white flex items-center gap-3">
-                    <span className={wins1 > wins2 ? "text-accent" : "text-white"}>{wins1}</span>
-                    <span className="text-white/20 text-2xl">:</span>
-                    <span className={wins2 > wins1 ? "text-accent" : "text-white"}>{wins2}</span>
-                </div>
-                <span className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">Final</span>
+                {selectedMapResult ? (
+                  <>
+                    <div className="text-4xl font-black tracking-widest text-white flex items-center gap-3">
+                        <span className={selectedMapResult.score_a > selectedMapResult.score_b ? "text-accent" : "text-white"}>{selectedMapResult.score_a}</span>
+                        <span className="text-white/20 text-2xl">:</span>
+                        <span className={selectedMapResult.score_b > selectedMapResult.score_a ? "text-accent" : "text-white"}>{selectedMapResult.score_b}</span>
+                    </div>
+                    <span className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">{selectedMap}</span>
+                  </>
+                ) : (
+                  <span className="text-[10px] text-gray-500 uppercase tracking-widest">{selectedMap || "All Maps"}</span>
+                )}
             </div>
             {/* T2 */}
             <div className="flex items-center gap-4 flex-1">

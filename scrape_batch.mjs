@@ -223,8 +223,15 @@ async function scrapearPartido(matchId, index, total) {
                 if (!name) return;
 
                 const team = (allStats.filter(s => s.map_name === map.cleanName).length < 5) ? teamA : teamB;
-                let agentSrc = $row.find('.ovw-agents img').first().attr('src');
-                if (agentSrc && !agentSrc.startsWith('http')) agentSrc = 'https://www.vlr.gg' + agentSrc;
+                // En "All Maps" un jugador puede mostrar 2 agentes (uno por mapa jugado).
+                // Guardamos ambos separados por "||"; el 1ro es el principal.
+                const agentImgs = [];
+                $row.find('.ovw-agents img').each((_, img) => {
+                    let src = $(img).attr('src');
+                    if (src && !src.startsWith('http')) src = 'https://www.vlr.gg' + src;
+                    if (src) agentImgs.push(src);
+                });
+                const agentSrc = agentImgs.join('||');
 
                 const statBoth = (col) => extractInt(clean($row.find(`.ovw-kda-stat[data-col="${col}"] .mod-both`).first().text()));
                 const valK = statBoth('kills');
