@@ -111,16 +111,22 @@ async function scrapearPartido(matchId, index, total) {
             startDateTime = new Date(isoString);
         }
 
-        // ESTADO
-        let status = 'UPCOMING';
-        const note = $('.match-header-vs-note').text().toLowerCase();
-        if (note.includes('final') || note.includes('completed')) status = 'COMPLETED';
-        else if ($('.match-header-vs-score').hasClass('mod-live')) status = 'LIVE';
-
         // SCORE
         let scoreA = 0, scoreB = 0;
         const scoreMatch = $('.match-header-vs-score').text().trim().match(/(\d+)[:\-\s]+(\d+)/);
         if (scoreMatch) { scoreA = parseInt(scoreMatch[1]); scoreB = parseInt(scoreMatch[2]); }
+
+        // ESTADO
+        let status = 'UPCOMING';
+        const note = clean($('.match-header-vs-note').text()).toLowerCase();
+        if (note.includes('final') || note.includes('completed')) status = 'COMPLETED';
+        else if (note.includes('live') || $('.match-header-vs-score').hasClass('mod-live')) status = 'LIVE';
+
+        // FALLBACK: si vlr.gg cambió las clases/textos de arriba, nos apoyamos en
+        // hora de inicio + score parcial para no dejar un partido en curso como "UPCOMING".
+        if (status === 'UPCOMING' && startDateTime && startDateTime.getTime() <= Date.now() && (scoreA > 0 || scoreB > 0)) {
+            status = 'LIVE';
+        }
 
         console.log(`   📅 ${startDateTime ? startDateTime.toISOString() : '???'} | ${teamA} vs ${teamB} [${status}]`);
 
@@ -250,16 +256,42 @@ async function scrapearPartido(matchId, index, total) {
             if (mapsInfo.length > 0) await supabase.from('match_maps').insert(mapsInfo);
             await supabase.from('match_stats').delete().eq('match_id', matchId);
             const { error } = await supabase.from('match_stats').insert(allStats);
-            
+
             if (!error) console.log(`   💾 Stats guardados (${allStats.length}).`);
             else console.error(`   ❌ Error DB Stats: ${error.message}`);
+        } else if (status === 'UPCOMING') {
+            console.log(`   ℹ️ Sin stats (partido futuro, es normal).`);
         } else {
-            console.log(`   ℹ️ Sin stats (Probablemente partido futuro).`);
+            // El partido ya empezó/terminó pero no encontramos tabla de stats:
+            // probablemente vlr.gg cambió el HTML. Volcamos pistas para diagnosticar.
+            console.log(`   ⚠️ Sin stats para un partido ${status} (inesperado). DIAG:`);
+            console.log(`      .vm-stats-games-nav-item: ${$('.vm-stats-games-nav-item').length}`);
+            console.log(`      .js-map-switch: ${$('.js-map-switch').length}`);
+            console.log(`      .vm-stats-game: ${$('.vm-stats-game').length}`);
+            console.log(`      table (total en la página): ${$('table').length}`);
+            console.log(`      [class*="stats"] (total): ${$('[class*="stats"]').length}`);
+            console.log(`      [class*="mod-live"] (total): ${$('[class*="mod-live"]').length}`);
         }
 
     } catch (err) {
         console.error(`   ❌ Error crítico:`, err.message);
     }
+}
+
+// --- 3. LIMPIEZA DE ZOMBIES ---
+// Partidos que quedaron marcados UPCOMING pero ya pasaron hace rato y vlr.gg
+// dejó de listarlos (por eso este scraper nunca los vuelve a tocar).
+async function limpiarZombies() {
+    const cutoff = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await supabase
+        .from('matches')
+        .update({ status: 'COMPLETED' })
+        .eq('status', 'UPCOMING')
+        .lt('start_datetime', cutoff)
+        .select('id');
+
+    if (error) console.error('❌ Error limpiando zombies:', error.message);
+    else console.log(`🧟 Zombies limpiados: ${data?.length || 0}`);
 }
 
 async function runBatch() {
@@ -269,6 +301,7 @@ async function runBatch() {
         await scrapearPartido(ids[i], i, ids.length);
         await sleep(DELAY_MS);
     }
+    await limpiarZombies();
     console.log("\n🏁 Fin.");
 }
 

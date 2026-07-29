@@ -56,16 +56,28 @@ export default async function MatchesPage() {
   const todayMatches = [];
   const nextMatches = [];
 
-  // Nueva lógica: Filtra zombis
-  const cutoff = now - (6 * 60 * 60 * 1000); // 6 horas en el pasado
+  // Definimos un límite: Si un partido "Upcoming" debió empezar hace más de 3 horas,
+  // asumimos que ya acabó y lo escondemos hasta que el scraper traiga el resultado real.
+  const ZOMBIE_LIMIT = 3 * 60 * 60 * 1000; // 3 horas en milisegundos
 
   allMatches.forEach(m => {
-    // 1. Si el partido es UPCOMING pero empezó hace más de 6 horas, es un error (Zombie). Lo ignoramos.
-    if (m.status === 'UPCOMING' && m.startTs < cutoff) {
+    const timeSinceStart = now - m.startTs;
+
+    // 1. FILTRO ANTI-FANTASMAS
+    // Si dice UPCOMING pero empezó hace más de 3 horas, lo saltamos.
+    if (m.status === 'UPCOMING' && timeSinceStart > ZOMBIE_LIMIT) {
       return;
     }
 
-    // 2. Clasificación normal
+    // 2. AUTO-CORRECCIÓN VISUAL (Opcional pero recomendado)
+    // Si dice UPCOMING pero empezó hace poco (ej. 10 mins), lo forzamos a verse LIVE
+    // Esto ayuda mientras esperas que el scraper oficial corra.
+    if (m.status === 'UPCOMING' && timeSinceStart > 0 && timeSinceStart <= ZOMBIE_LIMIT) {
+      m.status = 'LIVE';
+      // (Opcional) Puedes ponerle un flag para pintarlo diferente si quieres
+    }
+
+    // 3. Clasificación Normal
     if (m.status === 'LIVE' || (m.startTs - now < oneDay)) {
       todayMatches.push(m);
     } else {
