@@ -1338,7 +1338,9 @@ main {
 }
 
 .sched-detail-inner {
-  padding: 0 18px 20px;
+  /* Sin padding propio: el ancho debe calzar exacto con la card de arriba.
+     El espaciado interno lo da el p-5 de MatchDetail. */
+  padding: 0;
 }
 
 /* === Desactivar cualquier hover cuando esté abierto === */
