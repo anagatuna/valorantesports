@@ -1,0 +1,22 @@
+name: Diagnostico - Estructura de Equipos
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v3
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Inspeccionar estructura de equipos en VLR.gg
+        run: node diag_team.mjs
