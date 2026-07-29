@@ -202,7 +202,7 @@ export default function MatchDetail({ match }) {
   };
 
   return (
-    <div className="w-full bg-[#111] p-5 rounded-xl border border-white/5 mt-4 shadow-xl">
+    <div className="w-full bg-[#111] p-5 rounded-b-xl border border-t-0 border-white/5 shadow-xl">
       
       {/* HEADER */}
       <div className="flex flex-col gap-4 mb-4 border-b border-white/10 pb-4">
