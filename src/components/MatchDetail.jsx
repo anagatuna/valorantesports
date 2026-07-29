@@ -223,7 +223,9 @@ export default function MatchDetail({ match }) {
     <div className="relative overflow-hidden w-full bg-[#111] p-5 rounded-b-xl border border-t-0 border-white/5 shadow-xl">
 
       {mapImageSrc && (
-        <div className="sched__bg" aria-hidden="true">
+        // --center-w/--center-radius normalmente los define .sched (la card colapsada);
+        // aqui no estamos dentro de esa card, asi que los definimos localmente.
+        <div className="sched__bg" aria-hidden="true" style={{ "--center-w": "70%", "--center-radius": "8px" }}>
           <div className="sched__center">
             <Image
               src={mapImageSrc}
