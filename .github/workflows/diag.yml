@@ -1,0 +1,30 @@
+name: Diagnostico vlr.gg
+
+on:
+  workflow_dispatch:
+    inputs:
+      match_id:
+        description: 'ID del partido de vlr.gg a inspeccionar'
+        required: true
+        default: '716584'
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar codigo
+        uses: actions/checkout@v3
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Diagnostico stats
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: node diag_stats.mjs "${{ github.event.inputs.match_id }}"
