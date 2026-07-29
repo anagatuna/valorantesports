@@ -150,8 +150,10 @@ async function scrapearPartido(matchId, index, total) {
         });
 
         // --- 6. DETECCIÓN DE MAPAS Y STATS (Solo si hay datos) ---
+        // OJO: vlr.gg renombró esta clase (ya no lleva guion entre "games" y "nav").
         let mapTabs = [];
-        let navItems = $('.vm-stats-games-nav-item');
+        let navItems = $('.vm-stats-gamesnav-item');
+        if (navItems.length === 0) navItems = $('.vm-stats-games-nav-item');
         if (navItems.length === 0) navItems = $('.js-map-switch');
 
         if (navItems.length > 0) {
@@ -185,19 +187,17 @@ async function scrapearPartido(matchId, index, total) {
             if (processedMaps.has(map.cleanName)) continue;
             processedMaps.add(map.cleanName);
 
-            let table = $(`.vm-stats-game[data-game-id="${map.id}"] table`);
-            if (table.length === 0 && map.id === 'all') {
-                table = $('.vm-stats-game table').first();
-            }
-            
-            // Si no hay tabla de stats (común en Upcoming), saltamos
-            if (table.length === 0) continue;
+            // vlr.gg ya no usa <table>: los stats son un grid de divs (.ovw-row/.ovw-cell).
+            const gameContainer = $(`.vm-stats-game[data-game-id="${map.id}"]`);
+            const rows = gameContainer.find('.ovw-row').not('.mod-head');
 
-            // ... Extracción de stats ...
+            // Sin filas de jugadores (común en Upcoming o si el mapa no se jugó), saltamos
+            if (rows.length === 0) continue;
+
             let t1_t = 0, t1_ct = 0, t2_t = 0, t2_ct = 0;
             if (map.cleanName !== 'All Maps' && map.cleanName !== 'TBD') {
-                const gameContainer = $(`.vm-stats-game[data-game-id="${map.id}"]`);
                 const teamsHeader = gameContainer.find('.vm-stats-game-header .team');
+                let sA = map.score_a, sB = map.score_b;
                 if (teamsHeader.length >= 2) {
                     const row1 = $(teamsHeader[0]);
                     const row2 = $(teamsHeader[1]);
@@ -205,39 +205,31 @@ async function scrapearPartido(matchId, index, total) {
                     t1_ct = extractInt(row1.find('.mod-ct').text());
                     t2_t = extractInt(row2.find('.mod-t').text());
                     t2_ct = extractInt(row2.find('.mod-ct').text());
+                    const s1 = extractInt(row1.find('.score').first().text());
+                    const s2 = extractInt(row2.find('.score').first().text());
+                    if (s1 || s2) { sA = s1; sB = s2; }
                 }
                 mapsInfo.push({
-                    match_id: matchId, map_name: map.cleanName, 
-                    score_a: map.score_a, score_b: map.score_b,
+                    match_id: matchId, map_name: map.cleanName,
+                    score_a: sA, score_b: sB,
                     t1_t, t1_ct, t2_t, t2_ct
                 });
             }
 
             // Players
-            const headers = [];
-            table.find('thead tr').last().find('th, td').each((i, el) => {
-                let txt = clean($(el).text()).toUpperCase();
-                if (!txt) txt = $(el).attr('title')?.toUpperCase() || ""; 
-                headers.push(txt);
-            });
-
-            let idxK = headers.findIndex(h => (h === 'K' || h.startsWith('KILLS')) && !h.includes('KAST'));
-            let idxD = -1, idxA = -1;
-            if (idxK !== -1) { idxD = idxK + 1; idxA = idxK + 2; } 
-            else { idxK = 4; idxD = 5; idxA = 6; }
-
-            table.find('tbody tr').each((i, row) => {
-                const cols = $(row).find('td');
-                const name = clean($(row).find('.text-of').first().text()); 
-                if (!name) return; 
+            rows.each((i, row) => {
+                const $row = $(row);
+                const name = clean($row.find('.text-of').first().text());
+                if (!name) return;
 
                 const team = (allStats.filter(s => s.map_name === map.cleanName).length < 5) ? teamA : teamB;
-                let agentSrc = $(row).find('img').first().attr('src');
+                let agentSrc = $row.find('.ovw-agents img').first().attr('src');
                 if (agentSrc && !agentSrc.startsWith('http')) agentSrc = 'https://www.vlr.gg' + agentSrc;
 
-                const valK = extractInt(clean(cols.eq(idxK).text()));
-                const valD = extractInt(clean(cols.eq(idxD).text()));
-                const valA = extractInt(clean(cols.eq(idxA).text()));
+                const statBoth = (col) => extractInt(clean($row.find(`.ovw-kda-stat[data-col="${col}"] .mod-both`).first().text()));
+                const valK = statBoth('kills');
+                const valD = statBoth('deaths');
+                const valA = statBoth('assists');
 
                 allStats.push({
                     match_id: matchId,
@@ -265,10 +257,10 @@ async function scrapearPartido(matchId, index, total) {
             // El partido ya empezó/terminó pero no encontramos tabla de stats:
             // probablemente vlr.gg cambió el HTML. Volcamos pistas para diagnosticar.
             console.log(`   ⚠️ Sin stats para un partido ${status} (inesperado). DIAG:`);
-            console.log(`      .vm-stats-games-nav-item: ${$('.vm-stats-games-nav-item').length}`);
+            console.log(`      .vm-stats-gamesnav-item: ${$('.vm-stats-gamesnav-item').length}`);
             console.log(`      .js-map-switch: ${$('.js-map-switch').length}`);
             console.log(`      .vm-stats-game: ${$('.vm-stats-game').length}`);
-            console.log(`      table (total en la página): ${$('table').length}`);
+            console.log(`      .ovw-row (total): ${$('.ovw-row').length}`);
             console.log(`      [class*="stats"] (total): ${$('[class*="stats"]').length}`);
             console.log(`      [class*="mod-live"] (total): ${$('[class*="mod-live"]').length}`);
         }
