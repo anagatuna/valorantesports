@@ -21,7 +21,8 @@ const agentKey = (s = "") => {
 };
 function resolveAgentPair(agentNameOrUrl) {
   const k = agentKey(agentNameOrUrl);
-  return { cover: `/agents/${k}/${k}-1.webp` };
+  // -1: icono de cara (default). -2: agente de cuerpo entero (se ve en hover).
+  return { cover: `/agents/${k}/${k}-1.webp`, standing: `/agents/${k}/${k}-2.webp` };
 }
 // Un jugador puede tener 2 agentes en la vista "All Maps" (uno por mapa jugado).
 // El scraper los guarda separados por "||" en la misma columna agent_img.
@@ -98,8 +99,7 @@ export default function MatchDetail({ match }) {
           return {
               name: p.player_name,
               agentName: agentKey(agents[0] || p.agent_img),
-              agentImg: agents[0] || p.agent_img,
-              extraAgents: agents.slice(1), // resto de agentes jugados en otros mapas (All Maps)
+              agentsList: agents.length ? agents : [p.agent_img], // todos los agentes jugados (All Maps: 1 por mapa)
               k: p.k, d: p.d, a: p.a,
               plusMinus: p.k - p.d
           };
@@ -112,27 +112,29 @@ export default function MatchDetail({ match }) {
   }, [allStats, selectedMap, t1, t2]);
 
   const Row = ({ p }) => {
-    const { cover } = resolveAgentPair(p.agentImg);
-    const extraCovers = (p.extraAgents || []).map(a => resolveAgentPair(a).cover);
     return (
       <tr className="border-b border-white/5 hover:bg-white/5 transition-colors group">
         <td className="py-2 pr-2 w-[180px]">
           <div className="flex items-center gap-3">
-            <div className="relative shrink-0">
-              <div className="w-9 h-9 relative rounded bg-gray-800 overflow-hidden border border-white/10 group-hover:border-accent/50 transition-colors">
-                  <Image src={cover} alt={p.agentName} fill className="object-cover" unoptimized />
-              </div>
-              {/* Agentes que jugo en los otros mapas (solo relevante en "All Maps") */}
-              {extraCovers.length > 0 && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 flex gap-1 opacity-0 pointer-events-none
-                                 group-hover:opacity-100 transition-opacity duration-150 z-20">
-                  {extraCovers.map((src, idx) => (
-                    <div key={idx} className="w-7 h-7 relative rounded overflow-hidden border border-accent/60 shadow-lg bg-gray-900">
-                      <Image src={src} alt="agente en otro mapa" fill className="object-cover" unoptimized />
+            {/* Todos los agentes jugados (en "All Maps" puede ser mas de 1), lado a lado.
+                Hover sobre cada icono muestra al MISMO agente de cuerpo entero. */}
+            <div className="flex items-center gap-1 shrink-0">
+              {p.agentsList.map((agentRaw, idx) => {
+                const { cover, standing } = resolveAgentPair(agentRaw);
+                const name = agentKey(agentRaw);
+                return (
+                  <div key={idx} className="relative group/agent">
+                    <div className="w-9 h-9 relative rounded bg-gray-800 overflow-hidden border border-white/10 group-hover/agent:border-accent/50 transition-colors">
+                      <Image src={cover} alt={name} fill className="object-cover" unoptimized />
                     </div>
-                  ))}
-                </div>
-              )}
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-16 h-24 opacity-0 scale-95 pointer-events-none
+                                     group-hover/agent:opacity-100 group-hover/agent:scale-100 transition-all duration-150 z-30
+                                     rounded overflow-hidden border border-accent/60 shadow-xl bg-gray-900">
+                      <Image src={standing} alt={`${name} de pie`} fill className="object-cover" unoptimized />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
             <div className="flex flex-col leading-none justify-center">
               <span className="font-bold text-white text-sm mb-1">{p.name}</span>
