@@ -6,6 +6,20 @@ import { supabase } from "@/lib/supabaseClient";
 
 const safe = (n) => Number(n ?? 0) || 0;
 
+/* ===== Fondo de mapa (mismo tratamiento visual que la card LIVE) ===== */
+const MAP_IMAGES = {
+  abyss: "/maps/abyss.webp", ascent: "/maps/ascent.webp", bind: "/maps/bind.webp",
+  breeze: "/maps/breeze.webp", corrode: "/maps/corrode.webp", fracture: "/maps/fracture.webp",
+  haven: "/maps/haven.webp", icebox: "/maps/icebox.webp", lotus: "/maps/lotus.webp",
+  pearl: "/maps/pearl.webp", split: "/maps/split.webp", sunset: "/maps/sunset.webp",
+  unknown: "/maps/unknown.webp",
+};
+const normMap = (s = "") => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "");
+const resolveMapImage = (mapName) => {
+  const key = normMap(mapName || "");
+  return MAP_IMAGES[key] || MAP_IMAGES.unknown || null;
+};
+
 /* ===== Utils ===== */
 const AGENT_ALIAS = { "kay/o": "kayo", brim: "brimstone", harbour: "harbor" };
 const agentKey = (s = "") => {
@@ -85,6 +99,10 @@ export default function MatchDetail({ match }) {
     () => mapsResults.find(m => m.map_name === selectedMap),
     [mapsResults, selectedMap]
   );
+
+  // Fondo del mapa: mismo tratamiento que la card cuando esta LIVE, pero solo
+  // cuando hay un mapa concreto seleccionado (no en "All Maps").
+  const mapImageSrc = selectedMapResult ? resolveMapImage(selectedMap) : null;
 
   const scoreboard = useMemo(() => {
       if (allStats.length === 0 || !selectedMap) return { playersT1: [], playersT2: [] };
@@ -202,8 +220,24 @@ export default function MatchDetail({ match }) {
   };
 
   return (
-    <div className="w-full bg-[#111] p-5 rounded-b-xl border border-t-0 border-white/5 shadow-xl">
-      
+    <div className="relative overflow-hidden w-full bg-[#111] p-5 rounded-b-xl border border-t-0 border-white/5 shadow-xl">
+
+      {mapImageSrc && (
+        <div className="sched__bg" aria-hidden="true">
+          <div className="sched__center">
+            <Image
+              src={mapImageSrc}
+              alt={selectedMap || "map"}
+              fill
+              priority={false}
+              className="sched__center-img"
+              sizes="60vw"
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="relative z-10">
       {/* HEADER */}
       <div className="flex flex-col gap-4 mb-4 border-b border-white/10 pb-4">
         <div className="flex justify-between items-center">
@@ -325,6 +359,7 @@ export default function MatchDetail({ match }) {
             </tbody>
           </table>
         </div>
+      </div>
       </div>
     </div>
   );
