@@ -99,7 +99,7 @@ export default function MatchDetail({ match }) {
               name: p.player_name,
               agentName: agentKey(agents[0] || p.agent_img),
               agentImg: agents[0] || p.agent_img,
-              agentImg2: agents[1] || null,
+              extraAgents: agents.slice(1), // resto de agentes jugados en otros mapas (All Maps)
               k: p.k, d: p.d, a: p.a,
               plusMinus: p.k - p.d
           };
@@ -113,22 +113,26 @@ export default function MatchDetail({ match }) {
 
   const Row = ({ p }) => {
     const { cover } = resolveAgentPair(p.agentImg);
-    const cover2 = p.agentImg2 ? resolveAgentPair(p.agentImg2).cover : null;
+    const extraCovers = (p.extraAgents || []).map(a => resolveAgentPair(a).cover);
     return (
       <tr className="border-b border-white/5 hover:bg-white/5 transition-colors group">
         <td className="py-2 pr-2 w-[180px]">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 relative rounded bg-gray-800 shrink-0 overflow-hidden border border-white/10 group-hover:border-accent/50 transition-colors">
-                <Image src={cover} alt={p.agentName} fill className="object-cover" unoptimized />
-                {cover2 && (
-                  <Image
-                    src={cover2}
-                    alt="agente secundario"
-                    fill
-                    unoptimized
-                    className="object-cover absolute inset-0 opacity-0 hover:opacity-100 transition-opacity duration-150"
-                  />
-                )}
+            <div className="relative shrink-0">
+              <div className="w-9 h-9 relative rounded bg-gray-800 overflow-hidden border border-white/10 group-hover:border-accent/50 transition-colors">
+                  <Image src={cover} alt={p.agentName} fill className="object-cover" unoptimized />
+              </div>
+              {/* Agentes que jugo en los otros mapas (solo relevante en "All Maps") */}
+              {extraCovers.length > 0 && (
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 flex gap-1 opacity-0 pointer-events-none
+                                 group-hover:opacity-100 transition-opacity duration-150 z-20">
+                  {extraCovers.map((src, idx) => (
+                    <div key={idx} className="w-7 h-7 relative rounded overflow-hidden border border-accent/60 shadow-lg bg-gray-900">
+                      <Image src={src} alt="agente en otro mapa" fill className="object-cover" unoptimized />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="flex flex-col leading-none justify-center">
               <span className="font-bold text-white text-sm mb-1">{p.name}</span>
@@ -176,7 +180,7 @@ export default function MatchDetail({ match }) {
                     <span className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">{selectedMap}</span>
                   </>
                 ) : (
-                  <span className="text-[10px] text-gray-500 uppercase tracking-widest">{selectedMap || "All Maps"}</span>
+                  <span className="text-[10px] text-gray-300 uppercase tracking-widest">{selectedMap || "All Maps"}</span>
                 )}
             </div>
             {/* T2 */}
