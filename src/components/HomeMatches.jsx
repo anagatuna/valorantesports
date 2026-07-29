@@ -17,8 +17,8 @@ const MAP_IMAGES = {
   abyss: "/maps/abyss.webp", ascent: "/maps/ascent.webp", bind: "/maps/bind.webp",
   breeze: "/maps/breeze.webp", corrode: "/maps/corrode.webp", fracture: "/maps/fracture.webp",
   haven: "/maps/haven.webp", icebox: "/maps/icebox.webp", lotus: "/maps/lotus.webp",
-  pearl: "/maps/pearl.webp", split: "/maps/split.webp", sunset: "/maps/sunset.webp",
-  unknown: "/maps/unknown.webp",
+  pearl: "/maps/pearl.webp", split: "/maps/split.webp", sunset: "/maps/sunset.webp", 
+  summit: "/maps/summit.webp", unknown: "/maps/unknown.webp",
 };
 const normMap = (s = "") => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
 const resolveMapImage = (mapName) => {
