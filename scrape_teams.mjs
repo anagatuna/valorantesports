@@ -30,19 +30,59 @@ const supabase = createClient(
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const clean = (s) => s ? s.replace(/[\n\t\r]/g, ' ').replace(/\s+/g, ' ').trim() : '';
 
-// Mapeo de regiones en VLR.gg
+// Mapeo de países/regiones en VLR.gg a nuestras regiones estándar
 const REGION_MAP = {
-    'north america': 'AMERICAS',
-    'latin america': 'AMERICAS',
+    // Países
+    'united states': 'AMERICAS',
+    'canada': 'AMERICAS',
+    'mexico': 'AMERICAS',
     'brazil': 'AMERICAS',
+    'argentina': 'AMERICAS',
+    'chile': 'AMERICAS',
+    'peru': 'AMERICAS',
+    'colombia': 'AMERICAS',
+
+    'france': 'EMEA',
+    'germany': 'EMEA',
+    'united kingdom': 'EMEA',
+    'spain': 'EMEA',
+    'italy': 'EMEA',
+    'netherlands': 'EMEA',
+    'belgium': 'EMEA',
+    'poland': 'EMEA',
+    'turkey': 'EMEA',
+    'sweden': 'EMEA',
+    'finland': 'EMEA',
+    'denmark': 'EMEA',
+    'norway': 'EMEA',
+    'ukraine': 'EMEA',
+    'russia': 'EMEA',
+    'israel': 'EMEA',
+    'saudi arabia': 'EMEA',
+    'south africa': 'EMEA',
     'europe': 'EMEA',
     'middle east': 'EMEA',
     'africa': 'EMEA',
-    'pacific': 'PACIFIC',
+
+    'south korea': 'PACIFIC',
     'korea': 'PACIFIC',
     'japan': 'PACIFIC',
+    'vietnam': 'PACIFIC',
+    'thailand': 'PACIFIC',
+    'indonesia': 'PACIFIC',
+    'philippines': 'PACIFIC',
+    'singapore': 'PACIFIC',
+    'malaysia': 'PACIFIC',
+    'australia': 'PACIFIC',
+    'new zealand': 'PACIFIC',
+    'pacific': 'PACIFIC',
     'southeast asia': 'PACIFIC',
+
     'china': 'CN',
+
+    // Regiones directas
+    'north america': 'AMERICAS',
+    'latin america': 'AMERICAS',
     'americas': 'AMERICAS',
     'emea': 'EMEA'
 };
@@ -110,19 +150,17 @@ async function extraerDetallesEquipo(href, index, total) {
         let logo = $('img.team-logo, img.team-image').first().attr('src');
         if (logo && logo.startsWith('//')) logo = 'https:' + logo;
 
-        // Región: buscamos en texto o atributos
+        // Región: en VLR.gg está en [class*="country"]
         let region = 'UNKNOWN';
-        const regionText = clean($('[class*="region"], [class*="country"], .team-region').text());
-        if (regionText) {
-            region = normalizeRegion(regionText);
+        const countryText = clean($('[class*="country"]').text());
+        if (countryText) {
+            region = normalizeRegion(countryText);
         }
 
-        // Tier: puede estar en clase CSS o en texto
+        // Tier: no está claramente identificado en el HTML.
+        // Podrías agregarlo manualmente o detectarlo por liga/competencia.
+        // Por ahora lo dejamos como UNKNOWN.
         let tier = 'UNKNOWN';
-        const tierText = clean($('[class*="tier"], .team-tier').text().toLowerCase());
-        if (tierText.includes('tier 1') || tierText.includes('tier1')) tier = 'TIER1';
-        else if (tierText.includes('tier 2') || tierText.includes('tier2')) tier = 'TIER2';
-        else if (tierText.includes('tier 3') || tierText.includes('tier3')) tier = 'TIER3';
 
         // Roster: buscar jugadores en la página
         const players = [];
