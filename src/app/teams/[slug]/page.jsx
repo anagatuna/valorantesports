@@ -3,48 +3,60 @@ export const dynamic = 'force-dynamic';
 import { notFound } from 'next/navigation';
 import { getTeamBySlug, getInitials } from '@/lib/teams';
 import { REGION_LOGOS } from '@/lib/regionLogos';
+import RegionTabs from '@/components/RegionTabs';
 
 function PlayerCard({ player }) {
   return (
     <li
       className={
-        'group relative shrink-0 w-[168px] h-[400px] overflow-hidden ' +
-        'bg-gradient-to-b from-[#3a1016] to-[#140609] ' +
-        'border-b-[3px] ' +
-        (player.isInactive ? 'border-white/25' : 'border-[#ff4655]')
+        'group relative shrink-0 w-[168px] h-[360px] overflow-hidden flex flex-col justify-end ' +
+        'bg-[#0f1215] ' + // El contenedor se queda quieto
+        'border-b-[4px] cursor-pointer ' +
+        (player.isInactive ? 'border-white/25 opacity-70' : 'border-[#ff4655]')
       }
     >
-      {player.img ? (
-        <img
-          src={player.img}
-          alt={player.nick}
-          loading='lazy'
-          className='absolute inset-0 w-full h-full object-cover object-top transition-transform duration-300 group-hover:scale-105'
-        />
-      ) : (
-        <span
-          aria-hidden='true'
-          className='absolute inset-x-0 top-[26%] text-center text-6xl font-extrabold text-white/[0.07] select-none'
-        >
-          {getInitials(player.nick)}
-        </span>
-      )}
-
+      {/* Etiqueta de Rol */}
       <span
         className={
-          'absolute top-0 left-0 z-10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider ' +
-          (player.isPlayer ? 'bg-[#ff4655] text-white' : 'bg-black/70 text-white/80')
+          'absolute top-2 left-2 z-20 px-2 py-1 text-[10px] font-bold uppercase tracking-wider backdrop-blur-sm transition-opacity duration-300 ' +
+          (player.isPlayer ? 'bg-[#ff4655] text-white' : 'bg-black/60 text-white border border-white/10')
         }
       >
         {player.role}
       </span>
 
-      <div className='absolute inset-x-0 bottom-0 px-3 pb-3 pt-10 bg-gradient-to-t from-black via-black/85 to-transparent'>
-        <p className='font-extrabold uppercase text-[15px] leading-tight truncate'>
+      {/* Imagen del jugador o Iniciales */}
+      {player.img ? (
+        <img
+          src={player.img}
+          alt={player.nick}
+          loading='lazy'
+          // Transición fluida, aumenta la escala, sube un poco, brilla más y añade sombra.
+          className={
+            'absolute inset-0 w-full h-full object-cover object-top z-0 ' +
+            'transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] ' +
+            'group-hover:scale-[1.15] group-hover:-translate-y-2 group-hover:brightness-110 ' +
+            'group-hover:drop-shadow-[0_15px_15px_rgba(0,0,0,0.8)]'
+          }
+        />
+      ) : (
+        <span
+          aria-hidden='true'
+          className='absolute inset-x-0 top-[25%] text-center text-7xl font-black text-white/5 select-none z-0 transition-transform duration-500 group-hover:scale-110'
+        >
+          {getInitials(player.nick)}
+        </span>
+      )}
+
+      {/* Nombres con degradado oscuro inferior */}
+      <div className='relative z-10 w-full bg-gradient-to-t from-[#0f1215] via-[#0f1215]/90 to-transparent px-3 pt-12 pb-5 text-center'>
+        <p className='font-black uppercase text-xl leading-none text-white truncate drop-shadow-md transition-colors duration-300 group-hover:text-[#ff4655]'>
           {player.nick}
         </p>
         {player.realName && (
-          <p className='text-[11px] text-white/55 truncate mt-1'>{player.realName}</p>
+          <p className='text-[11px] text-white/50 truncate mt-1 font-medium'>
+            {player.realName}
+          </p>
         )}
       </div>
     </li>
@@ -57,79 +69,99 @@ export default async function TeamDetail({ params }) {
 
   if (!team) notFound();
 
-  const players = team.players.filter(p => p.isPlayer);
-  const staff = team.players.filter(p => !p.isPlayer);
+  const allMembers = team.players || [];
+  
+  const activePlayers = allMembers.filter(p => p.isPlayer && !p.isInactive);
+  const subs = allMembers.filter(p => p.isPlayer && p.isInactive);
+  const staff = allMembers.filter(p => !p.isPlayer);
+
+  // Intentamos usar team.description. Si es nulo o vacío, mostramos un texto por defecto.
+  const descriptionText = team.description || `Representando a la región de VCT ${team.region}, ${team.name} compite al más alto nivel en el VALORANT Champions Tour.`;
 
   return (
-    <article>
-      <header className='relative rounded-2xl p-8 border border-white/10 bg-gradient-to-br from-[#611419] to-[#2a0810] shadow-xl overflow-hidden mb-8'>
-        {team.logo && (
-          <img
-            src={team.logo}
-            alt=''
-            aria-hidden='true'
-            className='absolute -right-6 top-1/2 -translate-y-1/2 w-56 h-56 object-contain opacity-10 pointer-events-none'
-          />
-        )}
-
-        <div className='relative flex items-start gap-5'>
-          {team.logo ? (
-            <img
-              src={team.logo}
-              alt={team.name}
-              className='w-20 h-20 object-contain shrink-0'
-            />
-          ) : (
-            <div className='w-20 h-20 shrink-0 rounded-full bg-white/10 flex items-center justify-center text-2xl font-bold text-white/40'>
-              {getInitials(team.name)}
-            </div>
-          )}
-
-          <div className='min-w-0'>
-            <h1 className='text-4xl md:text-5xl font-extrabold uppercase leading-none break-words'>
+    <>
+      {/* Pasamos la región del equipo para que se marque sola */}
+      <RegionTabs activeRegion={team.region} />
+      
+      <article className='flex flex-col w-full'>
+        <div className='flex-1 min-w-0 flex flex-col'>
+          
+          {/* Encabezado del Equipo */}
+          <header className='relative z-10 mb-12'>
+            <h1 className='text-5xl md:text-7xl font-black uppercase tracking-tight leading-none text-white'>
               {team.name}
             </h1>
-            <p className='flex items-center gap-2 mt-3 text-[#ff4655] font-bold uppercase tracking-wide text-sm'>
+            
+            <div className='flex items-center gap-2 mt-4 text-[#ff4655] font-bold uppercase tracking-widest text-sm'>
               {REGION_LOGOS[team.region] && (
                 <img src={REGION_LOGOS[team.region]} alt='' className='w-5 h-5' aria-hidden='true' />
               )}
               VCT {team.region}
+            </div>
+
+            {/* Renderizado dinámico de la descripción */}
+            <p className='mt-6 text-sm text-white/80 leading-relaxed max-w-3xl'>
+              {descriptionText}
             </p>
+          </header>
+
+          {/* Contenedor de todas las categorías de jugadores */}
+          <div className='flex flex-col gap-10 mt-auto'>
+            
+            {/* SECCIÓN JUGADORES (TITULARES) */}
+            {activePlayers.length > 0 && (
+              <section className='relative z-10'>
+                <h2 className='text-xs font-bold uppercase tracking-[0.2em] text-white/50 mb-4 flex items-center gap-2'>
+                  <span className='w-2 h-2 bg-[#ff4655] rounded-full inline-block'></span>
+                  Jugadores Titulares
+                </h2>
+                <ul className='flex gap-4 overflow-x-auto pb-2 custom-scrollbar'>
+                  {activePlayers.map((p) => (
+                    <PlayerCard key={p.key || p.nick} player={p} />
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {/* SECCIÓN SUSTITUTOS */}
+            {subs.length > 0 && (
+              <section className='relative z-10'>
+                <h2 className='text-xs font-bold uppercase tracking-[0.2em] text-white/50 mb-4 flex items-center gap-2'>
+                  <span className='w-2 h-2 bg-gray-500 rounded-full inline-block'></span>
+                  Sustitutos
+                </h2>
+                <ul className='flex gap-4 overflow-x-auto pb-2 custom-scrollbar'>
+                  {subs.map((p) => (
+                    <PlayerCard key={p.key || p.nick} player={p} />
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {/* SECCIÓN STAFF / COACHES */}
+            {staff.length > 0 && (
+              <section className='relative z-10'>
+                <h2 className='text-xs font-bold uppercase tracking-[0.2em] text-white/50 mb-4 flex items-center gap-2'>
+                  <span className='w-2 h-2 bg-white/20 rounded-full inline-block'></span>
+                  Staff & Coaches
+                </h2>
+                <ul className='flex gap-4 overflow-x-auto pb-2 custom-scrollbar'>
+                  {staff.map((p) => (
+                    <PlayerCard key={p.key || p.nick} player={p} />
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {allMembers.length === 0 && (
+              <p className='text-white/50 text-sm pb-10'>
+                No hay roster registrado para este equipo.
+              </p>
+            )}
+
           </div>
         </div>
-      </header>
-
-      {players.length > 0 && (
-        <section className='mb-8'>
-          <h2 className='text-xs font-bold uppercase tracking-[0.2em] text-white/50 mb-4'>
-            Roster
-          </h2>
-          <ul className='flex gap-3 overflow-x-auto pb-3'>
-            {players.map(p => (
-              <PlayerCard key={p.key} player={p} />
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {staff.length > 0 && (
-        <section className='mb-8'>
-          <h2 className='text-xs font-bold uppercase tracking-[0.2em] text-white/50 mb-4'>
-            Staff
-          </h2>
-          <ul className='flex gap-3 overflow-x-auto pb-3'>
-            {staff.map(p => (
-              <PlayerCard key={p.key} player={p} />
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {team.players.length === 0 && (
-        <p className='text-white/50 text-sm'>
-          No hay roster registrado para este equipo.
-        </p>
-      )}
-    </article>
+      </article>
+    </>
   );
 }
