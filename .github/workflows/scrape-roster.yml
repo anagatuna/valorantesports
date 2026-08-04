@@ -1,0 +1,65 @@
+name: Scrape Rosters (equipos + jugadores con foto)
+
+on:
+  # Los rosters cambian poco: una vez por semana alcanza.
+  schedule:
+    - cron: '0 6 * * 1'   # lunes 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      partners_only:
+        description: 'Sólo equipos VCT partner (48 equipos, ~1 min)'
+        required: false
+        default: true
+        type: boolean
+      region:
+        description: 'Región a scrapear (vacío = todas)'
+        required: false
+        default: ''
+        type: choice
+        options: ['', 'AMERICAS', 'EMEA', 'PACIFIC', 'CN']
+      limit:
+        description: 'Máximo de equipos (vacío = sin límite)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Sólo mostrar, sin escribir en la base'
+        required: false
+        default: false
+        type: boolean
+
+# Evita que dos corridas escriban en la base a la vez.
+concurrency:
+  group: scrape-roster
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Scrapear rosters
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          ARGS=""
+          # En la corrida programada se usa partners-only por defecto.
+          if [ "${{ inputs.partners_only }}" != "false" ]; then ARGS="$ARGS --partners-only"; fi
+          if [ -n "${{ inputs.region }}" ]; then ARGS="$ARGS --region=${{ inputs.region }}"; fi
+          if [ -n "${{ inputs.limit }}" ]; then ARGS="$ARGS --limit=${{ inputs.limit }}"; fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          echo "Ejecutando: node scrape_roster.mjs $ARGS"
+          node scrape_roster.mjs $ARGS
