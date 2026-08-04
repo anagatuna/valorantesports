@@ -276,24 +276,8 @@ main {
   color: var(--nav-accent);
 }
 
-.valo-side a::after {
-  content: "";
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 6px;
-  height: 2px;
-  background: var(--nav-accent);
-  border-radius: 2px;
-  transform: scaleX(0);
-  transform-origin: 50% 100%;
-  transition: transform .18s ease;
-  box-shadow: 0 0 5px rgba(55, 230, 217, .35);
-}
-
-.valo-side a:hover::after {
-  transform: scaleX(1);
-}
+/* Los enlaces del nav se marcan solo con color, sin subrayado: el único
+   subrayado de la interfaz es el de RegionTabs, y tener los dos competía. */
 
 .valo-bar {
   list-style: none;
@@ -328,11 +312,6 @@ main {
 .valo-side a.is-active,
 .valo-side a[aria-current="page"] {
   color: var(--nav-accent);
-}
-
-.valo-side a.is-active::after,
-.valo-side a[aria-current="page"]::after {
-  transform: scaleX(1);
 }
 
 .valo-center {
@@ -618,7 +597,7 @@ main {
 /* Accesibilidad / Motion */
 @media (prefers-reduced-motion: reduce) {
 
-  .valo-side a::after,
+  .valo-side a,
   .play-chip,
   .drawer-panel,
   .valo-drawer::before {
