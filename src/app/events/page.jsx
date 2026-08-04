@@ -1,120 +1,109 @@
-// Opcional: fuerza render dinámico para evitar cachés
 export const dynamic = 'force-dynamic';
 
-import { cookies } from 'next/headers';
 import Link from 'next/link';
-import { getEventsByBucket } from '@/lib/events';
-import RegionSwitcher from '@/components/RegionSwitcher';
-import { REGION_LOGOS } from '@/lib/regionLogos';
+import { getEvents } from '@/lib/events';
 
-const BUCKET_LABELS = ['AMERICAS', 'EMEA', 'PACIFIC', 'CN'];
+const STATUS_LABEL = {
+  ongoing: 'En curso',
+  upcoming: 'Próximos',
+  completed: 'Finalizados',
+  paused: 'En pausa',
+};
 
-function BucketCard({ regionKey, title, ev }) {
+const STATUS_CHIP = {
+  ongoing: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+  upcoming: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
+  completed: 'bg-white/5 text-slate-400 border-white/10',
+  paused: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+};
+
+// La API da el premio como cadena de dígitos ("250000"); vlr.gg lo muestra
+// formateado. Si viniera con símbolo o texto lo dejamos tal cual.
+function formatPrize(raw) {
+  if (!raw) return null;
+  const digits = String(raw).replace(/[^\d]/g, '');
+  if (!digits || digits !== String(raw).trim()) return String(raw);
+  return `$${Number(digits).toLocaleString('en-US')}`;
+}
+
+function EventCard({ ev }) {
+  const prize = formatPrize(ev.prizepool);
   return (
-    <div className="rounded-2xl p-6 border border-white/10 bg-gradient-to-b from-[#611419] to-[#3a0b10]">
-      <div className="flex items-center gap-3 mb-2">
-        {REGION_LOGOS[regionKey] && (
-          <img
-            src={REGION_LOGOS[regionKey]}
-            alt={`${regionKey} logo`}
-            className="w-6 h-6"
-          />
+    <Link
+      href={`/events/${ev.id}`}
+      className="group flex gap-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 transition hover:border-white/25 hover:bg-white/[0.06]"
+    >
+      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-white/5 p-2">
+        {ev.img ? (
+          // Logos de owcdn: sin optimizar para no pasarlos por el optimizador.
+          <img src={ev.img} alt="" className="max-h-full max-w-full object-contain" />
+        ) : (
+          <div className="h-full w-full rounded bg-white/10" />
         )}
-        <p className="text-xs uppercase opacity-80 tracking-widest">{title}</p>
       </div>
 
-      <h3 className="text-xl font-bold">{ev?.name || 'Sin evento activo'}</h3>
-      <p className="opacity-80">{ev?.dates || '—'}</p>
+      <div className="min-w-0 flex-1">
+        <h3 className="truncate font-semibold text-white group-hover:text-accent">{ev.name}</h3>
 
-      {ev?.img && (
-        <img
-          src={ev.img}
-          alt={ev.name}
-          className="mt-3 rounded-lg border border-white/10 w-full h-auto"
-        />
-      )}
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+          {ev.dates && <span>{ev.dates}</span>}
+          {prize && <span className="text-slate-300">{prize}</span>}
+          {ev.region && (
+            <span className="rounded border border-white/10 px-1.5 py-0.5 uppercase tracking-wider">
+              {ev.region}
+            </span>
+          )}
+        </div>
+      </div>
 
-      {ev?.id && (
-        <Link
-          href={`/tournaments/${ev.id}`}
-          className="inline-block mt-4 px-4 py-2 rounded border border-white/15 hover:border-white/30"
-        >
-          Ver torneo
-        </Link>
-      )}
-    </div>
+      <span
+        className={`h-fit shrink-0 rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+          STATUS_CHIP[ev.status] || STATUS_CHIP.completed
+        }`}
+      >
+        {STATUS_LABEL[ev.status] || ev.status || '—'}
+      </span>
+    </Link>
   );
 }
 
-export default async function Teams() {
-  // ✅ cookies() es async
-  const cookieStore = await cookies();
-  const cookieRegion = cookieStore.get('region')?.value;
-  const region = BUCKET_LABELS.includes(cookieRegion) ? cookieRegion : 'AMERICAS';
+export default async function EventsPage() {
+  const { events, source } = await getEvents();
 
-  // Trae eventos de la región (ongoing → upcoming)
-  let events = await getEventsByBucket(region, { status: 'ongoing' });
-  if (!events.length) events = await getEventsByBucket(region, { status: 'upcoming' });
-  const mainEvent = events[0] || null;
+  // Agrupamos por estado, como vlr.gg: lo que se juega ahora arriba.
+  const groups = ['ongoing', 'upcoming', 'completed', 'paused']
+    .map((status) => ({ status, items: events.filter((e) => e.status === status) }))
+    .filter((g) => g.items.length > 0);
 
-  // Trae un “principal” para las otras regiones
-  const otherRegions = BUCKET_LABELS.filter(b => b !== region);
-  const [r1, r2, r3] = await Promise.all(
-    otherRegions.map(b =>
-      getEventsByBucket(b, { status: 'ongoing' }).then(list => list[0] || null)
-    )
-  );
-
-  // 🔁 AHORA SÍ devolvemos JSX
   return (
-    <main className="max-w-7xl mx-auto px-6 py-10">
-      {/* Hero: torneo principal + logo + switcher */}
-      <section className="rounded-2xl p-8 border border-white/10 bg-gradient-to-b from-[#611419] to-[#3a0b10] shadow-xl mb-8">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            {REGION_LOGOS[region] && (
-              <img
-                src={REGION_LOGOS[region]}
-                alt={`${region} logo`}
-                className="w-10 h-10"
-              />
-            )}
-            <div>
-              <p className="text-sm uppercase tracking-widest opacity-80">
-                Tu región: {region}
-              </p>
-              <h1 className="text-3xl md:text-4xl font-extrabold mt-1">
-                {mainEvent?.name || `VALORANT CHAMPIONS TOUR: ${region}`}
-              </h1>
-              <p className="mt-2 opacity-80">{mainEvent?.dates || 'Próximamente'}</p>
-            </div>
+    <div>
+      <div className="mb-6 flex items-baseline justify-between gap-4">
+        <h1 className="text-2xl font-extrabold uppercase tracking-wider">Events</h1>
+        <span className="text-xs text-slate-500">
+          {events.length} eventos
+          {source === 'api' && ' · sin sincronizar'}
+        </span>
+      </div>
+
+      {events.length === 0 && (
+        <p className="rounded-xl border border-white/10 bg-white/[0.03] p-6 text-slate-400">
+          No hay eventos. Corre <code className="text-slate-300">node scrape_events.mjs</code> para
+          sincronizarlos.
+        </p>
+      )}
+
+      {groups.map((g) => (
+        <section key={g.status} className="mb-8">
+          <h2 className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-500">
+            {STATUS_LABEL[g.status]} · {g.items.length}
+          </h2>
+          <div className="grid gap-3 md:grid-cols-2">
+            {g.items.map((ev) => (
+              <EventCard key={ev.id} ev={ev} />
+            ))}
           </div>
-
-          <RegionSwitcher region={region} />
-        </div>
-
-        <div className="mt-6 flex gap-3">
-          <Link
-            href={mainEvent ? `/tournaments/${mainEvent.id}` : `/tournaments`}
-            className="px-5 py-3 rounded-xl border border-white/15 hover:border-white/30 transition"
-          >
-            Ver torneo
-          </Link>
-          <Link
-            href={mainEvent ? `/tournaments/${mainEvent.id}/schedule` : `/tournaments/schedule`}
-            className="px-5 py-3 rounded-xl bg-white/10 hover:bg-white/15 transition"
-          >
-            Ver calendario
-          </Link>
-        </div>
-      </section>
-
-      {/* Otras regiones */}
-      <section className="grid md:grid-cols-3 gap-6">
-        <BucketCard regionKey={otherRegions[0]} title={otherRegions[0]} ev={r1} />
-        <BucketCard regionKey={otherRegions[1]} title={otherRegions[1]} ev={r2} />
-        <BucketCard regionKey={otherRegions[2]} title={otherRegions[2]} ev={r3} />
-      </section>
-    </main>
+        </section>
+      ))}
+    </div>
   );
 }

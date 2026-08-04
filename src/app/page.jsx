@@ -44,9 +44,13 @@ function adaptarDesdeDB(row) {
       { name: row.team_a, score: row.score_a },
       { name: row.team_b, score: row.score_b }
     ],
-    status: row.status, 
-    event: "Valorant Match",
-    match_page: `https://www.vlr.gg/${row.id}`, 
+    status: row.status,
+    // Los partidos anteriores al sync de eventos no tienen event_name; para
+    // esos seguimos con la etiqueta generica en vez de dejar el hueco vacio.
+    event: row.event_name || "Valorant Match",
+    event_id: row.event_id || null,
+    match_stage: row.match_stage || null,
+    match_page: `https://www.vlr.gg/${row.id}`,
     vlrUrl: `https://www.vlr.gg/${row.id}`,
     
     startTs: ts,

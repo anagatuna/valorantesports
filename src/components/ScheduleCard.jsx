@@ -272,16 +272,19 @@ function buildEventFromPieces(m = {}) {
   return joined;
 }
 
+// El nombre real del torneo se devuelve tal cual: unifySep convierte ":" en
+// " · " y dejaria "VCT 2026 · EMEA Stage 2", que no es como se llama. Esa
+// normalizacion solo tiene sentido al pegar fases sueltas, mas abajo.
 function getEventDisplay(m = {}) {
   const ev = String(resolveEventLoose(m) || "").trim();
-  if (ev && !isGenericLabel(ev)) return ev;
+  if (ev && !isGenericLabel(ev)) return { text: ev, verbatim: true };
   const ser =
     m.seriesTitle || m.match_series || m.series_name || m.round_info || m.roundInfo ||
     m.stage?.round || m.stage?.name || m.bracket?.round_name || m.bracket_round ||
     m.group_round || m.group?.round || "";
-  if (ser && !isGenericLabel(ser)) return String(ser).replace(/\s*[:|•]\s*/g, " · ").replace(/\s+/g, " ").trim();
+  if (ser && !isGenericLabel(ser)) return { text: String(ser), verbatim: false };
   const built = buildEventFromPieces(m);
-  return isGenericLabel(built) ? "" : built;
+  return { text: isGenericLabel(built) ? "" : built, verbatim: false };
 }
 
 const unifySep = (s = "") => String(s).replace(/\s*[:|•\-–—]\s*/g, " · ").replace(/\s+/g, " ").trim();
@@ -381,7 +384,10 @@ export default function ScheduleCard({ match, logos = {}, teamList = [], expande
     return "FINAL";
   }, [mounted, now, match, startTsLocal]);
 
-  const evFull = useMemo(() => unifySep(getEventDisplay(match)), [match]);
+  const evFull = useMemo(() => {
+    const { text, verbatim } = getEventDisplay(match);
+    return verbatim ? text.replace(/\s+/g, " ").trim() : unifySep(text);
+  }, [match]);
 
   /* ====== Split CT/T ====== */
   const t1ct = Number(match?.rounds?.t1ct ?? 0);
