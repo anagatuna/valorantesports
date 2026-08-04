@@ -73,7 +73,8 @@ function teamsRoughEqual(a = "", b = "") {
 
 async function fetchLiveSegmentsFromProxy() {
   try {
-    const r = await fetch(`/api/vlrgg/list?q=live_score&_=${Date.now()}`, { cache: "no-store" });
+    // /api/vlrgg/list apuntaba a vlrggapi.vercel.app, que quedo apagado (402).
+    const r = await fetch(`/api/vlr/live?_=${Date.now()}`, { cache: "no-store" });
     if (!r.ok) return [];
     const j = await r.json();
     return Array.isArray(j?.data?.segments) ? j.data.segments : [];
@@ -83,15 +84,33 @@ async function fetchLiveSegmentsFromProxy() {
 function getSegMapName(seg = {}) { return seg?.current_map || seg?.actual_map || seg?.map || seg?.currentMap || seg?.actualMap || null; }
 const toInt = (x) => { const n = Number(x); return Number.isFinite(n) ? n : null; };
 function getSegSeries(seg = {}) {
-  const wins1 = toInt(seg.series_score1) ?? toInt(seg.maps1) ?? toInt(seg.series1) ?? 0;
-  const wins2 = toInt(seg.series_score2) ?? toInt(seg.maps2) ?? toInt(seg.series2) ?? 0;
+  // null (no 0) cuando el segmento no trae score: los de /results vienen sin el,
+  // y un 0 aqui pisaria el marcador real via getSegSeriesSafe.
+  const wins1 = toInt(seg.series_score1) ?? toInt(seg.maps1) ?? toInt(seg.series1);
+  const wins2 = toInt(seg.series_score2) ?? toInt(seg.maps2) ?? toInt(seg.series2);
   const bestOf = toInt(seg.best_of) ?? toInt(seg.bo) ?? null;
   return { wins1, wins2, bestOf };
 }
 const mapKeyOf = (seg) => String(seg?.current_map || seg?.map || "").toLowerCase().replace(/\s+/g, "").trim();
 
 /* ================== LOGICA DE JUEGO (Merge) ================== */
-function readProvided(seg = {}, team = 1) { const ct = Number(seg?.[`team_${team}_round_ct`]) || Number(seg?.[`team${team}_round_ct`]); const t = Number(seg?.[`team_${team}_round_t`]) || Number(seg?.[`team${team}_round_t`]); return { provided: Number.isFinite(ct) ? ct : (Number.isFinite(t) ? t : null), side: Number.isFinite(ct) ? "CT" : (Number.isFinite(t) ? "T" : null) }; }
+// Ojo con el 0: `Number(x) || Number(y)` convertia un 0 legitimo (equipo con 0
+// rondas CT, o sea el arranque de cada mapa) en NaN, y el lado inicial salia
+// mal. Recorremos las claves quedandonos con la primera que sea un numero.
+function firstNumber(seg, keys) {
+  for (const k of keys) {
+    const v = seg?.[k];
+    if (v === null || v === undefined || v === "") continue;
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+function readProvided(seg = {}, team = 1) {
+  const ct = firstNumber(seg, [`team_${team}_round_ct`, `team${team}_round_ct`]);
+  const t = firstNumber(seg, [`team_${team}_round_t`, `team${team}_round_t`]);
+  return { provided: ct ?? t, side: ct != null ? "CT" : (t != null ? "T" : null) };
+}
 function opposite(side) { return side === "CT" ? "T" : (side === "T" ? "CT" : null); }
 function sideForRound(startSide, roundIndex) { if (!startSide) return null; if (roundIndex < 12) return startSide; if (roundIndex < 24) return opposite(startSide); return (roundIndex - 24) % 2 === 0 ? opposite(startSide) : startSide; }
 function distributeByPattern(startSide, fromRound, wins) { let ct = 0, t = 0; for (let i = 0; i < wins; i++) { const side = sideForRound(startSide, fromRound + i); if (side === "CT") ct++; else if (side === "T") t++; } return { ct, t }; }
@@ -165,7 +184,7 @@ function hydrateWithSegmentsOnce(matches, segments) {
   if (!segments?.length) return matches;
   const isTBD = (s) => !s || /^tbd$/i.test(String(s).trim());
   const parseUnixTs = (s = "") => { const iso = String(s).replace(" ", "T") + "Z"; const t = Date.parse(iso); return Number.isFinite(t) ? t : null; };
-  const prepared = segments.map((seg) => ({ raw: seg, t1: clean(seg?.team1), t2: clean(seg?.team2), url: (seg?.match_page || "").trim(), isLiveSeg: String(seg?.time_until_match || "").toUpperCase().includes("LIVE") }));
+  const prepared = segments.map((seg) => ({ raw: seg, t1: clean(seg?.team1), t2: clean(seg?.team2), url: (seg?.match_page || "").trim(), isLiveSeg: String(seg?.time_until_match || "").toUpperCase().includes("LIVE"), isDoneSeg: String(seg?.status || "").toUpperCase() === "COMPLETED" }));
 
   return matches.map((m) => {
     if (!m?.teams?.length) return m;
@@ -184,7 +203,9 @@ function hydrateWithSegmentsOnce(matches, segments) {
     });
 
     if (!hit) return m;
-    const seg = hit.raw; const nextStatus = hit.isLiveSeg ? "LIVE" : (m.status || "UPCOMING"); const segMap = getSegMapName(seg);
+    // isDoneSeg: el partido ya salio en /results. Sin esto, un partido que
+    // termino se quedaba LIVE hasta el siguiente scrape (hasta 30 min).
+    const seg = hit.raw; const nextStatus = hit.isLiveSeg ? "LIVE" : (hit.isDoneSeg ? "FINAL" : (m.status || "UPCOMING")); const segMap = getSegMapName(seg);
     const merged = mergeLiveRounds(m.rounds, seg, m._mapKey, m._mapMeta);
     return {
       ...m, status: nextStatus,

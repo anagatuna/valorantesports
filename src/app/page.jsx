@@ -61,9 +61,15 @@ const normalizeMatch = (raw = {}) => ({ ...raw });
 const normalizeCollection = (coll) => ({ items: (coll?.items || []).map(normalizeMatch) });
 
 export default async function HomePage() {
+  // Supabase corta en 1000 filas si no pedimos rango, y la tabla ya paso de eso:
+  // los partidos mas nuevos (incluidos los que estan LIVE) se quedaban fuera.
+  // Ordenamos por fecha desc para que el recorte, cuando llegue, deje fuera lo
+  // viejo y no lo que esta en juego.
   const { data: dbMatches } = await supabase
     .from('matches')
-    .select('*');
+    .select('*')
+    .order('start_datetime', { ascending: false, nullsFirst: false })
+    .range(0, 4999);
 
   const allMatches = (dbMatches || []).map(adaptarDesdeDB);
 
