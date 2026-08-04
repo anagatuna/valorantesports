@@ -67,7 +67,8 @@ export default async function EventDetailPage({ params }) {
   const matches = await getEventMatches(id);
 
   return (
-    <div>
+    // pt-8: mismo motivo que en la lista, el navbar fijo no deja aire propio.
+    <div className="pt-8">
       <Link href="/events" className="text-xs text-slate-500 hover:text-slate-300">
         ← Events
       </Link>

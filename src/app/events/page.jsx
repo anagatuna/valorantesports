@@ -76,11 +76,13 @@ export default async function EventsPage() {
     .filter((g) => g.items.length > 0);
 
   return (
-    <div>
+    // pt-8: `main` en globals.css solo despeja la altura del navbar fijo
+    // (--bar-h), sin dejar aire propio. Misma razon que en teams/layout.jsx.
+    <div className="pt-8">
       <div className="mb-6 flex items-baseline justify-between gap-4">
         <h1 className="text-2xl font-extrabold uppercase tracking-wider">Events</h1>
         <span className="text-xs text-slate-500">
-          {events.length} events
+          {events.length} total
           {source === 'api' && ' · not synced'}
         </span>
       </div>
