@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import axios from 'axios';
 import https from 'https';
 import crypto from 'crypto';
+import { extractEvent, ensureEvent } from './vlr_event.mjs';
 
 dotenv.config({ path: '.env.local' });
 
@@ -130,6 +131,14 @@ async function scrapearPartido(matchId, index, total) {
 
         console.log(`   📅 ${startDateTime ? startDateTime.toISOString() : '???'} | ${teamA} vs ${teamB} [${status}]`);
 
+        // EVENTO
+        // El evento tiene que existir antes de enlazarlo: matches.event_id
+        // tiene FK contra events. Si falla el guardado dejamos el enlace en
+        // NULL en vez de tumbar el upsert del partido entero.
+        const ev = extractEvent($);
+        const evOk = await ensureEvent(supabase, ev);
+        if (evOk) console.log(`   🏆 ${ev.event_name}${ev.match_stage ? ` · ${ev.match_stage}` : ''}`);
+
         // GUARDAR EN SUPABASE
         const teamsToSave = [];
         if (teamA && logoA) teamsToSave.push({ name: teamA, img: logoA, updated_at: new Date() });
@@ -144,8 +153,11 @@ async function scrapearPartido(matchId, index, total) {
             team_a: teamA, team_b: teamB, 
             score_a: scoreA, score_b: scoreB, 
             team_a_logo: logoA, team_b_logo: logoB, 
-            status: status, 
+            status: status,
             start_datetime: startDateTime,
+            event_id: evOk ? ev.event_id : null,
+            event_name: ev.event_name,
+            match_stage: ev.match_stage,
             last_update: new Date()
         });
 

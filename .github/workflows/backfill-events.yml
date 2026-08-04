@@ -1,0 +1,50 @@
+name: Backfill de eventos
+
+# vlr.gg responde 403 a las IPs domésticas, así que este backfill solo puede
+# correr desde aquí. Es reanudable: cada ejecución coge los partidos que
+# todavía tienen event_id NULL, así que se puede lanzar varias veces hasta que
+# no queden. Cuando no quede ninguno, termina en segundos sin hacer nada.
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Cuántos partidos procesar como máximo'
+        required: false
+        default: '300'
+      delay_ms:
+        description: 'Pausa entre peticiones a vlr.gg (ms)'
+        required: false
+        default: '1500'
+      dry:
+        description: 'Solo reportar, sin escribir en Supabase'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    # 300 partidos a 1.5s son ~8 min; damos margen de sobra por si se sube el
+    # límite, pero cortamos antes del tope de 6h de Actions.
+    timeout-minutes: 60
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v3
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Backfill
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          BACKFILL_LIMIT: ${{ inputs.limit }}
+          BACKFILL_DELAY_MS: ${{ inputs.delay_ms }}
+          BACKFILL_DRY: ${{ inputs.dry }}
+        run: node backfill_events.mjs
