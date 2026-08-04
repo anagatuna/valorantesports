@@ -9,7 +9,7 @@ const fmtDate = (iso) => {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleString('es-MX', {
+  return d.toLocaleString('en-US', {
     day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
   });
 };
@@ -87,14 +87,14 @@ export default async function EventDetailPage({ params }) {
       </header>
 
       <h2 className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-500">
-        Partidos · {matches.length}
+        Matches · {matches.length}
       </h2>
 
       {matches.length === 0 ? (
         // Los partidos se enlazan con scrape_events.mjs, y la API fuente solo
         // cubre los ~250 mas recientes: los torneos viejos salen vacios.
         <p className="rounded-xl border border-white/10 bg-white/[0.03] p-6 text-sm text-slate-400">
-          Todavía no hay partidos enlazados a este evento.
+          No matches linked to this event yet.
         </p>
       ) : (
         <div className="flex flex-col gap-2">

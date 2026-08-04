@@ -4,10 +4,10 @@ import Link from 'next/link';
 import { getEvents } from '@/lib/events';
 
 const STATUS_LABEL = {
-  ongoing: 'En curso',
-  upcoming: 'Próximos',
-  completed: 'Finalizados',
-  paused: 'En pausa',
+  ongoing: 'Ongoing',
+  upcoming: 'Upcoming',
+  completed: 'Completed',
+  paused: 'Paused',
 };
 
 const STATUS_CHIP = {
@@ -80,15 +80,15 @@ export default async function EventsPage() {
       <div className="mb-6 flex items-baseline justify-between gap-4">
         <h1 className="text-2xl font-extrabold uppercase tracking-wider">Events</h1>
         <span className="text-xs text-slate-500">
-          {events.length} eventos
-          {source === 'api' && ' · sin sincronizar'}
+          {events.length} events
+          {source === 'api' && ' · not synced'}
         </span>
       </div>
 
       {events.length === 0 && (
         <p className="rounded-xl border border-white/10 bg-white/[0.03] p-6 text-slate-400">
-          No hay eventos. Corre <code className="text-slate-300">node scrape_events.mjs</code> para
-          sincronizarlos.
+          No events yet. Run <code className="text-slate-300">node scrape_events.mjs</code> to sync
+          them.
         </p>
       )}
 
