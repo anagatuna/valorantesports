@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ScheduleCard from "@/components/ScheduleCard";
 import { loadLogosFromCache, saveLogosToCache } from "@/utils/teamLogoCache";
 import MatchDetail from "@/components/MatchDetail";
+import { resolveMapImage } from "@/lib/maps";
+import { getLogo } from "@/lib/teams";
 import { createClient } from '@supabase/supabase-js';
 
 // --- CONFIGURACIÓN SUPABASE ---
@@ -13,19 +15,6 @@ const supabase = createClient(
 );
 
 /* ================== HELPERS ================== */
-const MAP_IMAGES = {
-  abyss: "/maps/abyss.webp", ascent: "/maps/ascent.webp", bind: "/maps/bind.webp",
-  breeze: "/maps/breeze.webp", corrode: "/maps/corrode.webp", fracture: "/maps/fracture.webp",
-  haven: "/maps/haven.webp", icebox: "/maps/icebox.webp", lotus: "/maps/lotus.webp",
-  pearl: "/maps/pearl.webp", split: "/maps/split.webp", sunset: "/maps/sunset.webp", 
-  summit: "/maps/summit.webp", unknown: "/maps/unknown.webp",
-};
-const normMap = (s = "") => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
-const resolveMapImage = (mapName) => {
-  const key = normMap(mapName || "");
-  return MAP_IMAGES[key] || MAP_IMAGES.unknown || null;
-};
-
 // Normalizadores
 function resolveEvent(raw = {}) {
   return (raw.event && String(raw.event).trim()) || (raw.tournament && String(raw.tournament).trim()) || (raw.league?.name && String(raw.league.name).trim()) || "";
@@ -57,9 +46,12 @@ async function ensureLogosFor(matches) {
       const { data: teamsData } = await supabase.from('teams').select('name, img').in('name', missingNames);
       if (teamsData) {
         teamsData.forEach((team) => {
-          if (!team.img) return;
+          // getLogo descarta rutas relativas y placeholders de vlr.gg, que el
+          // proxy no puede resolver (terminaban en 500).
+          const img = getLogo(team.img);
+          if (!img) return;
           const normalizedKey = team.name.toLowerCase().replace(/[\s\-_\.]+/g, "").trim();
-          logoMap[normalizedKey] = `/api/image-proxy?url=${encodeURIComponent(team.img)}`;
+          logoMap[normalizedKey] = `/api/image-proxy?url=${encodeURIComponent(img)}`;
         });
       }
     } catch (err) { console.error("Logo fetch error:", err); }

@@ -2,6 +2,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { getLogo } from "@/lib/teams";
 
 function normalize(name) {
   return name?.toLowerCase().replace(/[\s\-_\.]+/g, "").trim();
@@ -10,8 +11,11 @@ function normalize(name) {
 // 🔴 AGREGAR ESTA FUNCIÓN
 function getProxyUrl(url) {
   if (!url) return null;
+  // /img/... es una ruta relativa de vlr.gg (normalmente el placeholder
+  // /img/vlr/tmp/vlr.png): contra nuestro dominio no resuelve.
+  if (url.startsWith('/img/')) return null;
   if (url.startsWith('/')) return url; // Si es local, no tocar
-  return `/api/image-proxy?url=${encodeURIComponent(url)}`;
+  return getLogo(url) ? `/api/image-proxy?url=${encodeURIComponent(url)}` : null;
 }
 
 function findLogoFor(name, logoMap = {}, teamList = []) {

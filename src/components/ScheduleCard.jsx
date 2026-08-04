@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
+import MapBackground from "@/components/MapBackground";
 
 /* ===== Helpers deterministas ===== */
 const TIMEZONE = "America/Mexico_City";
@@ -419,20 +420,11 @@ export default function ScheduleCard({ match, logos = {}, teamList = [], expande
       <span className="sched__blob sched__blob--r" aria-hidden />
       <div className="sched__overlay" />
 
-      {match.mapImage && (
-        <div className="sched__bg" aria-hidden="true">
-          <div className="sched__center">
-            <Image
-              src={match.mapImage}
-              alt={match.currentMap || "map"}
-              fill
-              priority={false}
-              className="sched__center-img"
-              sizes="(max-width: 640px) 48vw, (max-width: 820px) 42vw, 30vw"
-            />
-          </div>
-        </div>
-      )}
+      <MapBackground
+        src={match.mapImage}
+        alt={match.currentMap}
+        sizes="(max-width: 640px) 48vw, (max-width: 820px) 42vw, 30vw"
+      />
 
       {wm1 && (
         <div className="sched__wm sched__wm--left">

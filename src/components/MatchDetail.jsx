@@ -2,25 +2,22 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Image from "next/image";
+import MapBackground from "@/components/MapBackground";
+import { resolveMapImage } from "@/lib/maps";
 import { supabase } from "@/lib/supabaseClient";
 
 const safe = (n) => Number(n ?? 0) || 0;
 
-/* ===== Fondo de mapa (mismo tratamiento visual que la card LIVE) ===== */
-const MAP_IMAGES = {
-  abyss: "/maps/abyss.webp", ascent: "/maps/ascent.webp", bind: "/maps/bind.webp",
-  breeze: "/maps/breeze.webp", corrode: "/maps/corrode.webp", fracture: "/maps/fracture.webp",
-  haven: "/maps/haven.webp", icebox: "/maps/icebox.webp", lotus: "/maps/lotus.webp",
-  pearl: "/maps/pearl.webp", split: "/maps/split.webp", summit: "/maps/summit.webp", sunset: "/maps/sunset.webp",
-  unknown: "/maps/unknown.webp",
-};
-const normMap = (s = "") => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "");
-const resolveMapImage = (mapName) => {
-  const key = normMap(mapName || "");
-  return MAP_IMAGES[key] || MAP_IMAGES.unknown || null;
-};
-
 /* ===== Utils ===== */
+// Carpetas realmente presentes en public/agents. Si el agente no está aquí
+// (agent_img vacío o un nombre que no reconocemos) no pedimos la imagen:
+// antes se generaba /agents/unknown/unknown-1.webp y devolvía 404.
+const KNOWN_AGENTS = new Set([
+  "astra", "breach", "brimstone", "chamber", "clove", "cypher", "deadlock",
+  "fade", "gekko", "harbor", "iso", "jett", "kayo", "killjoy", "neon", "omen",
+  "phoenix", "raze", "reyna", "sage", "skye", "sova", "tejo", "veto", "viper",
+  "vyse", "waylay", "yoru",
+]);
 const AGENT_ALIAS = { "kay/o": "kayo", brim: "brimstone", harbour: "harbor" };
 const agentKey = (s = "") => {
   if (!s) return "unknown";
@@ -35,6 +32,7 @@ const agentKey = (s = "") => {
 };
 function resolveAgentPair(agentNameOrUrl) {
   const k = agentKey(agentNameOrUrl);
+  if (!KNOWN_AGENTS.has(k)) return null;
   // -1: icono de cara (default). -2: agente de cuerpo entero (se ve en hover).
   return { cover: `/agents/${k}/${k}-1.webp`, standing: `/agents/${k}/${k}-2.webp` };
 }
@@ -139,16 +137,20 @@ export default function MatchDetail({ match }) {
                 (mismo mecanismo que codepen.io/gayane-gasparyan/pen/wvxewXO, a escala de icono). */}
             <div className="flex items-center gap-2 shrink-0">
               {p.agentsList.map((agentRaw, idx) => {
-                const { cover, standing } = resolveAgentPair(agentRaw);
+                const pair = resolveAgentPair(agentRaw);
                 const name = agentKey(agentRaw);
                 return (
                   <div key={idx} className="agent-card">
+                    {/* Sin agente conocido dejamos el hueco vacio (el .agent-cover
+                        ya tiene fondo y borde) en vez de pedir un webp inexistente. */}
                     <div className="agent-cover">
-                      <Image src={cover} alt={name} fill className="object-cover" unoptimized />
+                      {pair && <Image src={pair.cover} alt={name} fill className="object-cover" unoptimized />}
                     </div>
-                    <div className="agent-character">
-                      <Image src={standing} alt={`${name} de pie`} fill className="object-cover" unoptimized />
-                    </div>
+                    {pair && (
+                      <div className="agent-character">
+                        <Image src={pair.standing} alt={`${name} de pie`} fill className="object-cover" unoptimized />
+                      </div>
+                    )}
                     <style jsx>{`
                       .agent-card {
                         position: relative;
@@ -222,22 +224,14 @@ export default function MatchDetail({ match }) {
   return (
     <div className="relative overflow-hidden w-full bg-[#111] p-5 rounded-b-xl border border-t-0 border-white/5 shadow-xl">
 
-      {mapImageSrc && (
-        // --center-w/--center-radius normalmente los define .sched (la card colapsada);
-        // aqui no estamos dentro de esa card, asi que los definimos localmente.
-        <div className="sched__bg" aria-hidden="true" style={{ "--center-w": "70%", "--center-radius": "8px" }}>
-          <div className="sched__center">
-            <Image
-              src={mapImageSrc}
-              alt={selectedMap || "map"}
-              fill
-              priority={false}
-              className="sched__center-img"
-              sizes="60vw"
-            />
-          </div>
-        </div>
-      )}
+      {/* --center-w/--center-radius normalmente los define .sched (la card colapsada);
+          aqui no estamos dentro de esa card, asi que los definimos localmente. */}
+      <MapBackground
+        src={mapImageSrc}
+        alt={selectedMap}
+        sizes="60vw"
+        style={{ "--center-w": "70%", "--center-radius": "8px" }}
+      />
 
       <div className="relative z-10">
       {/* HEADER */}

@@ -8,6 +8,18 @@ export async function GET(request) {
     return new NextResponse('Missing URL', { status: 400 });
   }
 
+  // Solo URLs absolutas http(s): una ruta relativa (p. ej. el placeholder
+  // /img/vlr/tmp/vlr.png de vlr.gg) hace explotar fetch() y salía como 500.
+  let parsed;
+  try {
+    parsed = new URL(targetUrl);
+  } catch {
+    return new NextResponse('Invalid URL', { status: 400 });
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return new NextResponse('Unsupported protocol', { status: 400 });
+  }
+
   try {
     // Engañamos al servidor diciendo que somos un navegador Chrome
     const response = await fetch(targetUrl, {
@@ -17,7 +29,10 @@ export async function GET(request) {
       },
     });
 
-    if (!response.ok) throw new Error('Failed to fetch');
+    // Propagamos el status real del origen en vez de convertirlo todo en 500.
+    if (!response.ok) {
+      return new NextResponse('Upstream error', { status: response.status });
+    }
 
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
