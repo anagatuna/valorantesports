@@ -11,20 +11,19 @@ const REGIONS = [
   { id: 'CN', label: 'CN' },
 ];
 
-// Cuánto del hueco entre tabs ocupa el subrayado por cada lado. Medido contra
-// la referencia: con 0.8 (llegar justo antes del texto vecino) la barra queda
-// desproporcionada bajo las palabras cortas.
-const OVERHANG_RATIO = 0.4;
-const MIN_OVERHANG = 8;
+// Cuánto sobresale el subrayado a cada lado del texto. Fijo y corto: en el
+// cliente la barra abraza la palabra (SCHEDULE mide ~79px y su barra ~95px).
+const OVERHANG = 28;
+// El padding del nav va igualado al desborde a propósito: así el subrayado de
+// los tabs de los extremos cae justo en el borde de la línea sin dejar de
+// estar centrado bajo la palabra.
+const LINE_PAD = OVERHANG;
 
 export default function RegionTabs({ activeRegion = 'ALL' }) {
   // Copia local del activo para que el subrayado arranque a deslizarse en el
   // clic y no cuando el servidor conteste la navegación.
   const [current, setCurrent] = useState(activeRegion);
   const [bar, setBar] = useState(null);
-  // El desborde se deriva del hueco real entre tabs, así que se adapta al
-  // breakpoint (el gap cambia en md) sin números a mano.
-  const [overhang, setOverhang] = useState(24);
 
   const navRef = useRef(null);
   const tabRefs = useRef({});
@@ -37,22 +36,11 @@ export default function RegionTabs({ activeRegion = 'ALL' }) {
     if (!nav || !el) return;
 
     const measure = () => {
-      const els = REGIONS.map((r) => tabRefs.current[r.id]).filter(Boolean);
-      if (els.length < 2) return;
+      // La caja del texto ya es simétrica gracias al padding-left.
+      // Solo tomamos su posición y le sumamos el desborde (OVERHANG).
+      const left = el.offsetLeft - OVERHANG;
+      const right = el.offsetLeft + el.offsetWidth + OVERHANG;
 
-      // El tracking deja un hueco tras la última letra de cada tab; hay que
-      // descontarlo o todo sale corrido hacia la derecha.
-      const trailingOf = (n) => parseFloat(getComputedStyle(n).letterSpacing) || 0;
-
-      // Hueco visible entre el texto de un tab y el del siguiente.
-      const gap = els[1].offsetLeft - (els[0].offsetLeft + els[0].offsetWidth - trailingOf(els[0]));
-      const oh = Math.max(MIN_OVERHANG, Math.round(gap * OVERHANG_RATIO));
-      setOverhang(oh);
-
-      // Con el padding del nav igualado a `oh`, los tabs de los extremos caen
-      // justo en el borde de la línea sin necesidad de tratarlos aparte.
-      const left = el.offsetLeft - oh;
-      const right = el.offsetLeft + el.offsetWidth - trailingOf(el) + oh;
       setBar({
         left: Math.max(0, left),
         width: Math.min(nav.offsetWidth, right) - Math.max(0, left),
@@ -65,7 +53,7 @@ export default function RegionTabs({ activeRegion = 'ALL' }) {
     window.addEventListener('resize', measure);
     document.fonts?.ready.then(measure).catch(() => {});
     return () => window.removeEventListener('resize', measure);
-  }, [current, overhang]);
+  }, [current]);
 
   return (
     // La línea la lleva el <nav>, no este contenedor: así mide lo que ocupan
@@ -73,7 +61,7 @@ export default function RegionTabs({ activeRegion = 'ALL' }) {
     <div className="mb-8 flex w-full justify-center">
       <nav
         ref={navRef}
-        style={{ paddingLeft: overhang, paddingRight: overhang }}
+        style={{ paddingLeft: LINE_PAD, paddingRight: LINE_PAD }}
         className="relative inline-flex items-center justify-center gap-8 border-b border-white/35 md:gap-12"
       >
         {REGIONS.map((tab) => {
@@ -87,8 +75,9 @@ export default function RegionTabs({ activeRegion = 'ALL' }) {
               href={tab.id === 'ALL' ? '/teams' : `/teams?region=${tab.id}`}
               onClick={() => setCurrent(tab.id)}
               className={
-                // El -mr compensa el hueco que tracking deja tras la última letra.
-                'relative pb-1.5 text-xs font-medium tracking-[0.18em] -mr-[0.18em] uppercase transition-colors duration-300 ' +
+                // Cambiamos el margen negativo (-mr) por padding izquierdo (pl) 
+                // del mismo tamaño exacto que el tracking.
+                'relative pb-1.5 font-[family-name:var(--font-mark)] text-xs font-normal tracking-[0.12em] pl-[0.12em] uppercase transition-colors duration-300 ' +
                 (isActive ? 'text-[var(--nav-accent)]' : 'text-white/70 hover:text-white')
               }
             >
@@ -103,7 +92,7 @@ export default function RegionTabs({ activeRegion = 'ALL' }) {
         {bar && (
           <span
             aria-hidden="true"
-            className="pointer-events-none absolute bottom-[-1px] h-[2px] bg-[var(--nav-accent)] shadow-[0_0_6px_rgba(55,230,217,0.45)] transition-[transform,width] duration-300 ease-out"
+            className="pointer-events-none absolute bottom-[-1px] h-[2px] bg-[var(--nav-accent)] transition-[transform,width] duration-300 ease-out"
             style={{ width: bar.width, transform: `translateX(${bar.left}px)`, left: 0 }}
           />
         )}
