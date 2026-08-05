@@ -1417,6 +1417,226 @@ main {
   opacity: .85;
 }
 
+/* =========================
+   TEAM CARDS (cuadrícula de equipos)
+   Panel plano al estilo del cliente: relleno casi negro translúcido, borde
+   claro de 1px y esquina recortada. Sin tramas ni destellos: el relieve sale
+   de la inclinación 3D y de la sombra de suelo.
+========================= */
+.tcard {
+  --cut: 20px;
+  /* mordida de la esquina inferior derecha */
+  --rx: 0deg;
+  /* giro que escribe TeamCard según el puntero */
+  --ry: 0deg;
+  --z: 0px;
+  /* cuánto se acerca la carta entera */
+
+  display: block;
+  perspective: 1000px;
+}
+
+/* Al inclinarse invade a las vecinas: que lo haga por encima. */
+.tcard:hover {
+  position: relative;
+  z-index: 5;
+  --z: 16px;
+}
+
+.tcard__plane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  min-height: 208px;
+  padding: 26px 14px;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--rx)) rotateY(var(--ry)) translate3d(0, 0, var(--z));
+  /* Vuelta lenta al soltar; mientras el puntero está dentro se acorta para
+     que el giro no vaya por detrás del ratón. */
+  transition: transform .6s cubic-bezier(.22, .61, .36, 1);
+  will-change: transform;
+}
+
+.tcard[data-tilt="on"] .tcard__plane {
+  transition-duration: .12s;
+}
+
+/* Sombra de suelo. No se puede confiar en drop-shadow para esto: ese filtro
+   escala el alpha por el del elemento, y la carta es translúcida a propósito.
+   Va a Z negativa, así que al inclinarse hace parallaje contra la carta. */
+.tcard__cast {
+  position: absolute;
+  left: 5%;
+  right: 5%;
+  bottom: -14px;
+  height: 48px;
+  pointer-events: none;
+  transform: translateZ(-40px);
+  background: radial-gradient(ellipse at 50% 55%, rgba(0, 0, 0, .55) 0%, rgba(0, 0, 0, .26) 45%, transparent 72%);
+  /* Con el panel más transparente esta sombra se cuela por delante, así que
+     pesa menos que antes. */
+  opacity: .62;
+  transition: opacity .5s ease, transform .5s cubic-bezier(.22, .61, .36, 1);
+}
+
+.tcard:hover .tcard__cast {
+  opacity: 1;
+  transform: translateZ(-40px) translateY(10px) scale(1.06);
+}
+
+/* ---- Relleno ---- */
+.tcard__panel {
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%);
+  overflow: hidden;
+  /* Oscuro pero translúcido. Ojo al subirlo: cuanto más se cierra, más se
+     funden los logos monocromo negros (FURIA, ENVY, MIBR) con el panel.
+     Color plano: cualquier degradado aquí se lee como suciedad. */
+  background: rgba(10, 3, 6, .40);
+  /* Sombra corta y dura, del tipo que llevan los botones del juego. */
+  filter: drop-shadow(0 6px 6px rgba(0, 0, 0, 1));
+  transition: background .3s ease, filter .5s ease;
+}
+
+.tcard:hover .tcard__panel {
+  background: rgba(10, 3, 6, .50);
+  filter: drop-shadow(0 12px 12px rgba(0, 0, 0, 1));
+}
+
+/* ---- Borde ---- */
+/* Un anillo de verdad: el `evenodd` recorta el interior, así que no queda
+   nada de color claro por debajo del relleno. Pintarlo como un rectángulo
+   lleno tapado por el panel es lo que agrisaba la carta entera, porque el
+   panel es translúcido y dejaba ver el blanco. */
+.tcard__edge {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* En reposo no hay línea: la forma la definen el panel oscuro, la esquina
+     recortada y la sombra, como en los paneles del cliente. El borde sólo
+     aparece al apuntar, y en el rojo de la marca. */
+  background: transparent;
+  clip-path: polygon(evenodd,
+      0 0,
+      100% 0,
+      100% calc(100% - var(--cut)),
+      calc(100% - var(--cut)) 100%,
+      0 100%,
+      1px 1px,
+      calc(100% - 1px) 1px,
+      calc(100% - 1px) calc(100% - var(--cut)),
+      calc(100% - var(--cut)) calc(100% - 1px),
+      1px calc(100% - 1px));
+  transition: background .3s ease;
+}
+
+.tcard:hover .tcard__edge {
+  background: #ff4655;
+}
+
+/* Filo rojo inferior: crece de izquierda a derecha y el recorte de la esquina
+   se lo come en diagonal. */
+.tcard__bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 0;
+  background: #ff4655;
+  transition: width .45s cubic-bezier(.22, .61, .36, 1);
+}
+
+.tcard:hover .tcard__bar {
+  width: 100%;
+}
+
+/* ---- Logo ---- */
+.tcard__logo {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  transform-style: preserve-3d;
+}
+
+/* Sombra de contacto: se queda pegada al panel mientras el logo se despega,
+   que es de donde sale la sensación de altura. */
+.tcard__drop {
+  position: absolute;
+  bottom: -4px;
+  left: 12%;
+  right: 12%;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, .6), transparent 70%);
+  opacity: 0;
+  transition: opacity .5s ease;
+}
+
+.tcard:hover .tcard__drop {
+  opacity: 1;
+}
+
+.tcard__img {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  transform: translateZ(0);
+  transition: transform .55s cubic-bezier(.22, .61, .36, 1);
+}
+
+.tcard:hover .tcard__img {
+  transform: translateZ(46px) scale(1.04);
+  filter: drop-shadow(0 12px 14px rgba(0, 0, 0, .5));
+}
+
+.tcard__initials {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .07);
+  font-size: 1.9rem;
+  font-weight: 900;
+  color: rgba(255, 255, 255, .3);
+}
+
+/* ---- Nombre ---- */
+.tcard__name {
+  position: relative;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, .78);
+  transform: translateZ(0);
+  transition: transform .55s cubic-bezier(.22, .61, .36, 1), color .3s ease;
+}
+
+.tcard:hover .tcard__name {
+  transform: translateZ(24px);
+  color: #fff;
+}
+
+/* Sin relieve animado si el sistema pide menos movimiento; la carta conserva
+   el borde, el tinte y la sombra fija. */
+@media (prefers-reduced-motion: reduce) {
+
+  .tcard__plane,
+  .tcard__img,
+  .tcard__name,
+  .tcard__cast {
+    transform: none !important;
+    transition: none;
+  }
+}
+
+
 /* ===== Agent Card base ===== */
 .agent-card {
   /* ——— TAMAÑO (ajustable) ——— */
