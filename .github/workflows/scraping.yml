@@ -3,7 +3,11 @@ name: Clonador de Valorant
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/30 * * * *' # Ejecuta cada 30 min
+    # Cada 2 horas. Antes era */30, pero GitHub descarta los schedules de alta
+    # frecuencia en el tier gratuito cuando hay carga: las corridas reales ya
+    # venían saliendo cada 2-3 horas, así que pedir 30 min solo acumulaba
+    # ejecuciones fantasma en la cola.
+    - cron: '0 */2 * * *'
 
 jobs:
   scrape-vlr:
