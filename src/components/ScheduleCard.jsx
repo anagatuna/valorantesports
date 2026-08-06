@@ -290,7 +290,10 @@ function getEventDisplay(m = {}) {
 const unifySep = (s = "") => String(s).replace(/\s*[:|•\-–—]\s*/g, " · ").replace(/\s+/g, " ").trim();
 
 /* ===== Componente ===== */
-export default function ScheduleCard({ match, logos = {}, teamList = [], expanded = false, onToggle = () => { }, }) {
+// `href`: cuando la card no tiene nada que desplegar (partidos UPCOMING, que no
+// tienen stats todavia) la capa de click navega a la pagina del partido en vez
+// de expandir un panel vacio.
+export default function ScheduleCard({ match, logos = {}, teamList = [], expanded = false, onToggle = () => { }, href = null, }) {
   const [mounted, setMounted] = useState(false);
   const [now, setNow] = useState(null);
   const [startTsLocal, setStartTsLocal] = useState(null);
@@ -415,13 +418,17 @@ export default function ScheduleCard({ match, logos = {}, teamList = [], expande
 
   return (
     <div className={`sched sched--glass ${isLive ? "is-live" : ""} ${expanded ? "is-open" : ""}`}>
-      <button
-        type="button"
-        className="sched__click"
-        aria-expanded={expanded}
-        onClick={onToggle}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onToggle()}
-      />
+      {href ? (
+        <Link href={href} className="sched__click" aria-label={`Ver ${t1?.name ?? "equipo"} vs ${t2?.name ?? "equipo"}`} />
+      ) : (
+        <button
+          type="button"
+          className="sched__click"
+          aria-expanded={expanded}
+          onClick={onToggle}
+          onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onToggle()}
+        />
+      )}
       <span className="sched__blob sched__blob--l" aria-hidden />
       <span className="sched__blob sched__blob--r" aria-hidden />
       <div className="sched__overlay" />

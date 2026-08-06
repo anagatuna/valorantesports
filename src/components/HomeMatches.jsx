@@ -257,6 +257,17 @@ function sortMatches(list) {
 
 const POLL_MS = 30_000;
 
+// Solo LIVE y los terminados tienen stats que mostrar en el panel desplegable.
+// Un UPCOMING abre un panel vacio, asi que a esos los mandamos directo a su
+// pagina. El demo no existe en la DB: se queda expandible y sin enlace.
+function isExpandable(m) {
+  const s = String(m?.status || "").toUpperCase();
+  return s === "LIVE" || s === "FINAL" || s === "COMPLETED";
+}
+function matchHref(m) {
+  return m?.id && m.id !== "demo-live" ? `/matches/${m.id}` : null;
+}
+
 export default function HomeMatches({ today, next, completed }) {
   const [logoMap, setLogoMap] = useState({});
   const [teamList, setTeamList] = useState([]);
@@ -407,11 +418,22 @@ export default function HomeMatches({ today, next, completed }) {
             <div className="match-list">
               {upcoming.map((m) => {
                 const uid = m.uid ?? m.id ?? `${m.startTs || "ts"}|${m.teams?.[0]?.name || "t1"}|${m.teams?.[1]?.name || "t2"}`;
-                const isOpen = openId === uid;
+                const expandable = isExpandable(m);
+                const href = matchHref(m);
+                const isOpen = expandable && openId === uid;
                 return (
                   <div key={`u-${uid}`} className={`match-stack ${isOpen ? "is-open" : ""}`}>
-                    <ScheduleCard match={m} logos={logoMap} teamList={teamList} expanded={isOpen} onToggle={() => setOpenId(isOpen ? null : uid)} />
-                    <div className="sched-anim"><div className="sched-detail-row"><div className="sched-detail-inner"><MatchDetail match={m} logos={logoMap} teamList={teamList} /></div></div></div>
+                    <ScheduleCard
+                      match={m}
+                      logos={logoMap}
+                      teamList={teamList}
+                      expanded={isOpen}
+                      onToggle={() => setOpenId(isOpen ? null : uid)}
+                      href={expandable ? null : href}
+                    />
+                    {expandable && (
+                      <div className="sched-anim"><div className="sched-detail-row"><div className="sched-detail-inner"><MatchDetail match={m} logos={logoMap} teamList={teamList} /></div></div></div>
+                    )}
                   </div>
                 );
               })}

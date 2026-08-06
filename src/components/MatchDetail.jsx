@@ -2,43 +2,14 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import MapBackground from "@/components/MapBackground";
 import { resolveMapImage } from "@/lib/maps";
 import { supabase } from "@/lib/supabaseClient";
+import { agentKey, resolveAgentPair, splitAgents } from "@/lib/agents";
 
 const safe = (n) => Number(n ?? 0) || 0;
 
-/* ===== Utils ===== */
-// Carpetas realmente presentes en public/agents. Si el agente no está aquí
-// (agent_img vacío o un nombre que no reconocemos) no pedimos la imagen:
-// antes se generaba /agents/unknown/unknown-1.webp y devolvía 404.
-const KNOWN_AGENTS = new Set([
-  "astra", "breach", "brimstone", "chamber", "clove", "cypher", "deadlock",
-  "fade", "gekko", "harbor", "iso", "jett", "kayo", "killjoy", "neon", "omen",
-  "phoenix", "raze", "reyna", "sage", "skye", "sova", "tejo", "veto", "viper",
-  "vyse", "waylay", "yoru",
-]);
-const AGENT_ALIAS = { "kay/o": "kayo", brim: "brimstone", harbour: "harbor" };
-const agentKey = (s = "") => {
-  if (!s) return "unknown";
-  let cleanName = s;
-  if (s.includes('/')) {
-      const parts = s.split('/');
-      cleanName = parts[parts.length - 1].split('.')[0].replace(/\d/g, '');
-  }
-  const base = cleanName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-  const key = base.replace(/[^a-z]/g, "");
-  return (AGENT_ALIAS[key] || key).replace("/", "");
-};
-function resolveAgentPair(agentNameOrUrl) {
-  const k = agentKey(agentNameOrUrl);
-  if (!KNOWN_AGENTS.has(k)) return null;
-  // -1: icono de cara (default). -2: agente de cuerpo entero (se ve en hover).
-  return { cover: `/agents/${k}/${k}-1.webp`, standing: `/agents/${k}/${k}-2.webp` };
-}
-// Un jugador puede tener 2 agentes en la vista "All Maps" (uno por mapa jugado).
-// El scraper los guarda separados por "||" en la misma columna agent_img.
-const splitAgents = (raw = "") => String(raw).split('||').map(s => s.trim()).filter(Boolean);
 function SeriesDiamonds({ wins, side }) {
   const totalDots = wins > 2 ? 3 : 2; 
   return (
@@ -350,12 +321,28 @@ export default function MatchDetail({ match }) {
               </tr>
             </thead>
             <tbody>
-               {loading ? <tr><td colSpan="4" className="py-4 text-center text-xs opacity-50">Cargando...</td></tr> : 
+               {loading ? <tr><td colSpan="4" className="py-4 text-center text-xs opacity-50">Cargando...</td></tr> :
                 scoreboard.playersT2.map((p, i) => <Row key={i} p={p} />)}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Salida a la pagina del partido, donde esta el desglose completo.
+          El demo no existe en la DB, asi que no le ponemos enlace. */}
+      {match?.id && match.id !== "demo-live" && (
+        <div className="mt-4 flex justify-end">
+          <Link
+            href={`/matches/${match.id}`}
+            className="group inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.14em] text-white/35 no-underline transition-colors duration-300 hover:text-accent"
+          >
+            Partido completo
+            <svg aria-hidden="true" viewBox="0 0 16 24" className="w-2.5 h-3.5 rotate-180">
+              <path d="M14 2 L3 12 L14 22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="miter" />
+            </svg>
+          </Link>
+        </div>
+      )}
       </div>
     </div>
   );
