@@ -53,7 +53,10 @@ async function main() {
   console.log(`📡 Sincronizando eventos${DRY ? ' (dry run)' : ''}...`);
 
   // --- 1. EVENTOS ---
-  const events = await getJson(`${API}/events`);
+  // getAllPages, no getJson: sin paginar solo entraba la primera página (69 de
+  // 219), y lo que se quedaba fuera era justo lo ya terminado — entre ello todo
+  // el circuito collegiate, que hacía que el filtro CG saliera siempre vacío.
+  const events = await getAllPages('events');
   console.log(`   ✅ ${events.length} eventos en la fuente.`);
 
   const rows = events
