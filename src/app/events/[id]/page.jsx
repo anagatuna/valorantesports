@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getEventById, getEventMatches } from '@/lib/events';
 import { getLogo } from '@/lib/teams';
+import BackLink from '@/components/BackLink';
 
 const fmtDate = (iso) => {
   if (!iso) return null;
@@ -69,11 +70,9 @@ export default async function EventDetailPage({ params }) {
   return (
     // pt-8: mismo motivo que en la lista, el navbar fijo no deja aire propio.
     <div className="pt-8">
-      <Link href="/events" className="text-xs text-slate-500 hover:text-slate-300">
-        ← Events
-      </Link>
+      <BackLink href="/events" label="Events" />
 
-      <header className="mb-8 mt-3 flex gap-4 rounded-xl border border-white/10 bg-white/[0.03] p-5">
+      <header className="mb-8 mt-5 flex gap-4 rounded-xl border border-white/10 bg-white/[0.03] p-5">
         <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-white/5 p-2">
           {ev.img ? <img src={ev.img} alt="" className="max-h-full max-w-full object-contain" /> : <div className="h-full w-full rounded bg-white/10" />}
         </div>

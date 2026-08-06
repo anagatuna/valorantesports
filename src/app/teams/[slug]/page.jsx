@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { getTeamBySlug, getInitials } from '@/lib/teams';
 import { REGION_LOGOS } from '@/lib/regionLogos';
 import RegionTabs from '@/components/RegionTabs';
+import BackLink from '@/components/BackLink';
 
 function PlayerCard({ player }) {
   return (
@@ -82,7 +83,15 @@ export default async function TeamDetail({ params }) {
     <>
       {/* Pasamos la región del equipo para que se marque sola */}
       <RegionTabs activeRegion={team.region} />
-      
+
+      {/* Vuelve al grid de la misma región que quedó marcada en las tabs */}
+      <div className='mb-8'>
+        <BackLink
+          href={team.region ? `/teams?region=${team.region}` : '/teams'}
+          label='Teams'
+        />
+      </div>
+
       <article className='flex flex-col w-full'>
         <div className='flex-1 min-w-0 flex flex-col'>
           
