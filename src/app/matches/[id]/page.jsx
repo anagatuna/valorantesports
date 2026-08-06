@@ -1,8 +1,8 @@
 //src/app/matches/[id]/page.jsx
 export const dynamic = 'force-dynamic';
 
-import Link from "next/link";
 import { createClient } from '@supabase/supabase-js';
+import BackLink from '@/components/BackLink';
 
 // --- Configuración Supabase ---
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -27,15 +27,25 @@ export default async function MatchDetailPage({ params }) {
   if (!row) {
     return (
       <main className="max-w-5xl mx-auto px-6 py-10">
-        <Link href="/matches" className="text-sm opacity-70 hover:opacity-100">← Volver</Link>
-        <h1 className="text-3xl font-extrabold mt-2">Partido no encontrado</h1>
+        <BackLink href="/matches" label="Matches" />
+        <h1 className="text-3xl font-extrabold mt-4">Partido no encontrado</h1>
         <p className="opacity-80 mt-2">Este partido no está en la base de datos o ya expiró.</p>
       </main>
     );
   }
 
-  // 3. Preparar datos para la vista
-  // Nota: Si tu scraper no guarda "maps" en la DB, esa sección quedará vacía.
+  // 3. Los mapas no son una columna de `matches`: scrape_batch.mjs los guarda
+  // en la tabla `match_maps`, una fila por mapa. Sin stats scrapeados (partido
+  // futuro, o vlr.gg sin tabla) simplemente no hay filas y la sección queda vacía.
+  const { data: maps } = await supabase
+    .from('match_maps')
+    .select('*')
+    .eq('match_id', id)
+    .order('id', { ascending: true });
+
+  const mapRows = maps ?? [];
+
+  // 4. Preparar datos para la vista
   const eventName = row.tournament || 'Valorant Match';
   
   const team1 = { name: row.team_a, score: row.score_a };
@@ -43,8 +53,8 @@ export default async function MatchDetailPage({ params }) {
 
   return (
     <main className="max-w-5xl mx-auto px-6 py-10">
-      <Link href="/matches" className="text-sm opacity-70 hover:opacity-100">← Volver</Link>
-      <h1 className="text-3xl md:text-4xl font-extrabold mt-2">{eventName}</h1>
+      <BackLink href="/matches" label="Matches" />
+      <h1 className="text-3xl md:text-4xl font-extrabold mt-4">{eventName}</h1>
 
       {/* Marcador Principal */}
       <section className="mt-6 grid sm:grid-cols-2 gap-4">
@@ -77,19 +87,19 @@ export default async function MatchDetailPage({ params }) {
       {/* Maps */}
       <section className="mt-8 rounded-xl border border-white/10 bg-white/5 p-4">
         <h2 className="text-xl font-bold mb-3">Maps</h2>
-        {maps.length ? (
+        {mapRows.length ? (
           <div className="divide-y divide-white/10">
-            {maps.map((m, i) => (
-              <div key={i} className="py-2 flex justify-between">
-                <span>{m.name || m.map || 'Map'}</span>
+            {mapRows.map((m) => (
+              <div key={m.id} className="py-2 flex justify-between">
+                <span>{m.map_name || 'Map'}</span>
                 <span className="font-semibold">
-                  {(m.t1?.score ?? m.score1 ?? '-')} : {(m.t2?.score ?? m.score2 ?? '-')}
+                  {m.score_a ?? '-'} : {m.score_b ?? '-'}
                 </span>
               </div>
             ))}
           </div>
         ) : (
-          <p className="opacity-70">Los mapas no están disponibles en la API actual.</p>
+          <p className="opacity-70">Los mapas no están disponibles para este partido.</p>
         )}
       </section>
     </main>
