@@ -8,13 +8,14 @@ import HtmlAttributeGuard from "@/components/HtmlAttributeGuard";
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
-// La tipografía de la UI del juego. Sólo tenemos el corte Bold, así que se
-// declara como 700: pedirle otro peso haría que el navegador lo simule.
+// La tipografía de la UI del juego. Declaramos los dos cortes que tenemos para
+// que los titulares pesados usen el Bold real en vez de uno simulado.
 const markPro = localFont({
-  src: "./fonts/MarkPro-Medium.woff2",
+  src: [
+    { path: "./fonts/MarkPro-Medium.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/MarkPro-Bold.woff2", weight: "700", style: "normal" },
+  ],
   variable: "--font-mark",
-  weight: "400",
-  style: "normal",
   display: "swap",
 });
 

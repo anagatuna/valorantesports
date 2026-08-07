@@ -1419,107 +1419,186 @@ main {
 
 /* =========================
    TEAM CARDS (cuadrícula de equipos)
-   Panel plano al estilo del cliente: relleno casi negro translúcido, borde
-   claro de 1px y esquina recortada. Sin tramas ni destellos: el relieve sale
-   de la inclinación 3D y de la sombra de suelo.
+   Mismo lenguaje que el "CHOOSE A QUEUE" del cliente: tile apaisado con el
+   arte sangrando por un lado, degradado hacia abajo, título pesado en la
+   esquina inferior izquierda y un riel fino por debajo. El acento sigue
+   siendo el rojo de la marca, no el turquesa del juego.
 ========================= */
 .tcard {
-  --cut: 20px;
+  --accent: #ff4655;
+  --cut: 16px;
   /* mordida de la esquina inferior derecha */
-  --rx: 0deg;
-  /* giro que escribe TeamCard según el puntero */
-  --ry: 0deg;
-  --z: 0px;
-  /* cuánto se acerca la carta entera */
 
   display: block;
-  perspective: 1000px;
+  color: inherit;
+  text-decoration: none;
 }
 
-/* Al inclinarse invade a las vecinas: que lo haga por encima. */
-.tcard:hover {
+.tcard__tile {
   position: relative;
-  z-index: 5;
-  --z: 16px;
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+  min-height: 150px;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%);
+  /* Base translúcida: deja pasar el fondo rojo de la página. Ojo al subir
+     estos alfas: cuanto más se cierra el panel, más se funden con él los
+     logos monocromo negros (ENVY, MIBR, FURIA). */
+  background:
+    radial-gradient(120% 95% at 76% 42%, rgba(255, 70, 85, .14), transparent 62%),
+    linear-gradient(160deg, rgba(40, 13, 19, .52) 0%, rgba(13, 4, 7, .60) 58%, rgba(6, 2, 4, .66) 100%);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, .45);
+  transition: transform .35s cubic-bezier(.22, .61, .36, 1), box-shadow .35s ease;
 }
 
-.tcard__plane {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
-  min-height: 208px;
-  padding: 26px 14px;
-  transform-style: preserve-3d;
-  transform: rotateX(var(--rx)) rotateY(var(--ry)) translate3d(0, 0, var(--z));
-  /* Vuelta lenta al soltar; mientras el puntero está dentro se acorta para
-     que el giro no vaya por detrás del ratón. */
-  transition: transform .6s cubic-bezier(.22, .61, .36, 1);
-  will-change: transform;
+.tcard:hover .tcard__tile {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 26px rgba(0, 0, 0, .6);
 }
 
-.tcard[data-tilt="on"] .tcard__plane {
-  transition-duration: .12s;
-}
-
-/* Sombra de suelo. No se puede confiar en drop-shadow para esto: ese filtro
-   escala el alpha por el del elemento, y la carta es translúcida a propósito.
-   Va a Z negativa, así que al inclinarse hace parallaje contra la carta. */
-.tcard__cast {
+/* ---- Arte de fondo ---- */
+/* El logo otra vez, gigante y sin color: hace de textura, no de marca. Va
+   desaturado a propósito para que no compita con el logo nítido. */
+.tcard__ghost {
   position: absolute;
-  left: 5%;
-  right: 5%;
-  bottom: -14px;
-  height: 48px;
+  top: 50%;
+  right: -14%;
+  width: 66%;
+  transform: translateY(-50%) scale(1);
+  object-fit: contain;
+  opacity: .12;
+  filter: grayscale(1) brightness(1.7);
   pointer-events: none;
-  transform: translateZ(-40px);
-  background: radial-gradient(ellipse at 50% 55%, rgba(0, 0, 0, .55) 0%, rgba(0, 0, 0, .26) 45%, transparent 72%);
-  /* Con el panel más transparente esta sombra se cuela por delante, así que
-     pesa menos que antes. */
-  opacity: .62;
-  transition: opacity .5s ease, transform .5s cubic-bezier(.22, .61, .36, 1);
+  transition: opacity .5s ease, transform .6s cubic-bezier(.22, .61, .36, 1);
 }
 
-.tcard:hover .tcard__cast {
-  opacity: 1;
-  transform: translateZ(-40px) translateY(10px) scale(1.06);
+.tcard:hover .tcard__ghost {
+  opacity: .2;
+  transform: translateY(-50%) scale(1.09);
 }
 
-/* ---- Relleno ---- */
-.tcard__panel {
+/* Dos degradados cruzados: uno sube desde abajo para sostener el texto, otro
+   entra desde la izquierda para que el nombre no caiga sobre el arte. */
+.tcard__scrim {
   position: absolute;
   inset: 0;
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%);
-  overflow: hidden;
-  /* Oscuro pero translúcido. Ojo al subirlo: cuanto más se cierra, más se
-     funden los logos monocromo negros (FURIA, ENVY, MIBR) con el panel.
-     Color plano: cualquier degradado aquí se lee como suciedad. */
-  background: rgba(10, 3, 6, .40);
-  /* Sombra corta y dura, del tipo que llevan los botones del juego. */
-  filter: drop-shadow(0 6px 6px rgba(0, 0, 0, 1));
-  transition: background .3s ease, filter .5s ease;
+  pointer-events: none;
+  background:
+    linear-gradient(to top, rgba(0, 0, 0, .88) 0%, rgba(0, 0, 0, .38) 46%, transparent 78%),
+    linear-gradient(to right, rgba(0, 0, 0, .6) 0%, transparent 58%);
 }
 
-.tcard:hover .tcard__panel {
-  background: rgba(10, 3, 6, .50);
-  filter: drop-shadow(0 12px 12px rgba(0, 0, 0, 1));
+/* ---- Logo nítido ---- */
+/* El logo se queda en su propia columna: `.tcard__body` reserva el hueco con
+   su `right`, así que los dos porcentajes tienen que sumar menos de 100. */
+.tcard__logo {
+  position: absolute;
+  top: 44%;
+  right: 6%;
+  width: 30%;
+  height: 50%;
+  display: grid;
+  place-items: center;
+  transform: translateY(-50%);
+  transition: transform .55s cubic-bezier(.22, .61, .36, 1);
+}
+
+.tcard:hover .tcard__logo {
+  transform: translateY(-50%) scale(1.07);
+}
+
+/* Sin halo ni fondo detrás: el logo va limpio sobre el panel. */
+.tcard__img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 14px rgba(0, 0, 0, .55));
+}
+
+/* ---- Logos que llegan en negro plano (ver `teamLogoTone.js`) ---- */
+/* En los dos casos el `drop-shadow` va al final: si fuera primero, el
+   `invert` le daría la vuelta también a la sombra. */
+
+/* Silueta 100% negra -> blanca. */
+.tcard__img--white {
+  filter: brightness(0) invert(1) drop-shadow(0 8px 14px rgba(0, 0, 0, .55));
+}
+
+/* Negro + un acento de color que hay que respetar. Invertir y girar el tono
+   180deg sube el negro a blanco y devuelve el rojo a rojo (el invertido a
+   secas lo dejaría cian); el `saturate` le repone la fuerza que pierde por el
+   camino, y no ensucia el blanco porque el blanco no tiene croma.
+   Los grados y la saturación salen de medir el resultado sobre el PNG real:
+   cada acento necesita los suyos. */
+
+/* 100T: el swoosh es (234,50,50) -> queda en (255,45,45). */
+.tcard__img--red {
+  filter: invert(1) hue-rotate(180deg) saturate(4) drop-shadow(0 8px 14px rgba(0, 0, 0, .55));
+}
+
+/* FUT: la estrella es (237,26,58), más fría. Con 180deg salía rosa
+   (255,100,171); a 190deg queda en (255,39,36). */
+.tcard__img--crimson {
+  filter: invert(1) hue-rotate(190deg) saturate(5) drop-shadow(0 8px 14px rgba(0, 0, 0, .55));
+}
+
+/* El fantasma del fondo va neutro siempre, así que le basta la silueta. */
+.tcard__ghost--lit {
+  filter: brightness(0) invert(1);
+}
+
+.tcard__initials {
+  display: grid;
+  place-items: center;
+  width: 82%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .06);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: rgba(255, 255, 255, .35);
+}
+
+/* ---- Texto ---- */
+.tcard__body {
+  position: absolute;
+  left: 18px;
+  right: 40%;
+  bottom: 15px;
+  display: flex;
+  flex-direction: column;
+  transition: transform .45s cubic-bezier(.22, .61, .36, 1);
+}
+
+.tcard:hover .tcard__body {
+  transform: translateY(-2px);
+}
+
+.tcard__name {
+  font-family: var(--font-mark), sans-serif;
+  font-weight: 700;
+  font-size: clamp(19px, 1.5vw, 25px);
+  line-height: .96;
+  letter-spacing: .015em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, .92);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, .7);
+  transition: color .3s ease;
+}
+
+.tcard:hover .tcard__name {
+  color: #fff;
 }
 
 /* ---- Borde ---- */
-/* Un anillo de verdad: el `evenodd` recorta el interior, así que no queda
-   nada de color claro por debajo del relleno. Pintarlo como un rectángulo
-   lleno tapado por el panel es lo que agrisaba la carta entera, porque el
-   panel es translúcido y dejaba ver el blanco. */
+/* Un anillo de verdad: el `evenodd` recorta el interior, así que el color no
+   se cuela por debajo del tile. En reposo casi no se ve; al apuntar se
+   enciende en rojo, como el tile activo del juego. */
 .tcard__edge {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  /* En reposo no hay línea: la forma la definen el panel oscuro, la esquina
-     recortada y la sombra, como en los paneles del cliente. El borde sólo
-     aparece al apuntar, y en el rojo de la marca. */
-  background: transparent;
+  background: rgba(255, 255, 255, .07);
   clip-path: polygon(evenodd,
       0 0,
       100% 0,
@@ -1534,105 +1613,82 @@ main {
   transition: background .3s ease;
 }
 
-.tcard:hover .tcard__edge {
-  background: #ff4655;
+.tcard:hover .tcard__edge,
+.tcard:focus-visible .tcard__edge {
+  background: var(--accent);
 }
 
-/* Filo rojo inferior: crece de izquierda a derecha y el recorte de la esquina
-   se lo come en diagonal. */
-.tcard__bar {
+/* Marca de esquina del tile seleccionado. */
+.tcard__mark {
   position: absolute;
-  left: 0;
-  bottom: 0;
-  height: 2px;
-  width: 0;
-  background: #ff4655;
-  transition: width .45s cubic-bezier(.22, .61, .36, 1);
+  top: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  clip-path: polygon(100% 0, 100% 100%, 0 0);
+  opacity: 0;
+  transform: translate(5px, -5px);
+  transition: opacity .3s ease, transform .3s cubic-bezier(.22, .61, .36, 1);
 }
 
-.tcard:hover .tcard__bar {
+.tcard:hover .tcard__mark,
+.tcard:focus-visible .tcard__mark {
+  opacity: 1;
+  transform: none;
+}
+
+/* ---- Riel inferior ---- */
+/* La línea que el cliente pone bajo cada tile. Arranca con un tramo corto en
+   rojo y se completa al apuntar. */
+.tcard__rail {
+  position: relative;
+  display: block;
+  height: 2px;
+  margin-top: 7px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, .12);
+}
+
+.tcard__rail i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 22%;
+  background: var(--accent);
+  transition: width .5s cubic-bezier(.22, .61, .36, 1);
+}
+
+.tcard:hover .tcard__rail i,
+.tcard:focus-visible .tcard__rail i {
   width: 100%;
 }
 
-/* ---- Logo ---- */
-.tcard__logo {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 96px;
-  height: 96px;
-  transform-style: preserve-3d;
+.tcard:focus-visible {
+  outline: none;
 }
 
-/* Sombra de contacto: se queda pegada al panel mientras el logo se despega,
-   que es de donde sale la sensación de altura. */
-.tcard__drop {
-  position: absolute;
-  bottom: -4px;
-  left: 12%;
-  right: 12%;
-  height: 14px;
-  border-radius: 50%;
-  background: radial-gradient(ellipse at center, rgba(0, 0, 0, .6), transparent 70%);
-  opacity: 0;
-  transition: opacity .5s ease;
-}
-
-.tcard:hover .tcard__drop {
-  opacity: 1;
-}
-
-.tcard__img {
-  width: 96px;
-  height: 96px;
-  object-fit: contain;
-  transform: translateZ(0);
-  transition: transform .55s cubic-bezier(.22, .61, .36, 1);
-}
-
-.tcard:hover .tcard__img {
-  transform: translateZ(46px) scale(1.04);
-  filter: drop-shadow(0 12px 14px rgba(0, 0, 0, .5));
-}
-
-.tcard__initials {
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, .07);
-  font-size: 1.9rem;
-  font-weight: 900;
-  color: rgba(255, 255, 255, .3);
-}
-
-/* ---- Nombre ---- */
-.tcard__name {
-  position: relative;
-  text-align: center;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, .78);
-  transform: translateZ(0);
-  transition: transform .55s cubic-bezier(.22, .61, .36, 1), color .3s ease;
-}
-
-.tcard:hover .tcard__name {
-  transform: translateZ(24px);
-  color: #fff;
-}
-
-/* Sin relieve animado si el sistema pide menos movimiento; la carta conserva
-   el borde, el tinte y la sombra fija. */
+/* Sin desplazamientos si el sistema pide menos movimiento; el tile conserva
+   el borde, el tinte y el riel. */
 @media (prefers-reduced-motion: reduce) {
 
-  .tcard__plane,
-  .tcard__img,
-  .tcard__name,
-  .tcard__cast {
-    transform: none !important;
+  .tcard__tile,
+  .tcard__ghost,
+  .tcard__logo,
+  .tcard__body {
     transition: none;
+  }
+
+  .tcard:hover .tcard__tile,
+  .tcard:hover .tcard__body {
+    transform: none;
+  }
+
+  .tcard:hover .tcard__ghost {
+    transform: translateY(-50%);
+  }
+
+  .tcard:hover .tcard__logo {
+    transform: translateY(-50%);
   }
 }
 
