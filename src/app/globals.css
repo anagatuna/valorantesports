@@ -1693,6 +1693,75 @@ main {
 }
 
 
+/* =========================
+   TEAM DETAIL (ficha de equipo)
+   Panel oscuro translúcido + rótulos verticales, como la ficha del cliente.
+========================= */
+
+/* Rótulo vertical de los raíles: `vertical-rl` lo pone en columna y el giro
+   lo deja leyéndose de abajo arriba, como los del cliente. */
+.tlabel-v {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  white-space: nowrap;
+}
+
+/* El panel de la cabecera no tiene bordes: se desvanece contra el fondo, como
+   en el cliente, donde no se ve dónde acaba el recuadro.
+   El relleno va en un pseudoelemento y no en el propio panel porque la
+   máscara que lo difumina afectaría también al texto y a las fichas. */
+/* Titular de equipo. Quantico es más baja y ancha que la del juego, así que se
+   estira en vertical. Con el origen abajo crece hacia arriba, y el margen
+   superior reserva justo ese crecimiento: el `transform` no ocupa sitio en el
+   flujo, así que sin él se comería el aire de lo que tenga encima. */
+.tdisplay {
+  font-family: var(--font-display), sans-serif;
+  font-weight: 700;
+  transform: scaleY(1.18);
+  transform-origin: left bottom;
+  margin-top: .2em;
+}
+
+.tpanel {
+  /* Crea contexto de apilado para que el ::before con z negativa se quede
+     detrás del contenido pero por delante del fondo de la página. */
+  isolation: isolate;
+}
+
+.tpanel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  /* Pesa en la esquina superior izquierda, donde está el titular, y se va
+     aclarando hacia la derecha. */
+  background: linear-gradient(to right, rgba(0, 0, 0, .55) 0%, rgba(0, 0, 0, .40) 45%, rgba(0, 0, 0, .28) 100%);
+  /* Dos degradados cruzados que se intersecan. Arriba y a la izquierda entran
+     a plomo, sin desvanecido: el recuadro sólo muere hacia abajo y hacia la
+     derecha, así que ese vértice queda bien marcado. */
+  -webkit-mask-image:
+    linear-gradient(to bottom, #000 0%, #000 58%, transparent 100%),
+    linear-gradient(to right, #000 0%, #000 82%, transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to bottom, #000 0%, #000 58%, transparent 100%),
+    linear-gradient(to right, #000 0%, #000 82%, transparent 100%);
+  mask-composite: intersect;
+}
+
+/* La marca de agua se apaga igual por los bordes; si no, al recortarla el
+   panel dejaría un canto recto justo donde ya no hay recuadro. */
+.tdetail__mark {
+  -webkit-mask-image: radial-gradient(closest-side, #000 55%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 55%, transparent 100%);
+}
+
+/* La marca de agua del titular es el mismo logo, así que los que vienen en
+   negro también hay que encenderlos o no se ve nada detrás del nombre. */
+.tdetail__mark--lit {
+  filter: brightness(0) invert(1);
+}
+
 /* ===== Agent Card base ===== */
 .agent-card {
   /* ——— TAMAÑO (ajustable) ——— */
