@@ -145,12 +145,22 @@ async function elegirHost() {
   return null;
 }
 
-// El CDN devuelve http://; se fuerza https o el navegador lo bloquea por
-// contenido mixto al servir la app sobre TLS.
-const imagen = (v) =>
-  typeof v === 'string' && /^https?:\/\//.test(v) && !/team-tbd/.test(v)
-    ? v.replace(/^http:/, 'https:')
-    : null;
+/**
+ * Normaliza una URL de imagen de Riot, o null si no sirve.
+ *
+ * Se descartan los marcadores de posición: `default-headshot.png` para gente
+ * sin foto y `team-tbd.png` para el rival por decidir. Guardarlos sería peor
+ * que no tener nada, porque taparían la foto real de vlr.gg — que en la
+ * mayoría de esos casos sí existe.
+ *
+ * El CDN devuelve http://; se fuerza https o el navegador lo bloquea por
+ * contenido mixto al servir la app sobre TLS.
+ */
+const imagen = (v) => {
+  if (typeof v !== 'string' || !/^https?:\/\//.test(v)) return null;
+  if (/default-headshot|team-tbd/i.test(v)) return null;
+  return v.replace(/^http:/, 'https:');
+};
 
 // ---------------------------------------------------------------------------
 // Riot: equipos y rosters
