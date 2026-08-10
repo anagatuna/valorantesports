@@ -1618,26 +1618,6 @@ main {
   background: var(--accent);
 }
 
-/* Marca de esquina del tile seleccionado. */
-.tcard__mark {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 14px;
-  height: 14px;
-  background: var(--accent);
-  clip-path: polygon(100% 0, 100% 100%, 0 0);
-  opacity: 0;
-  transform: translate(5px, -5px);
-  transition: opacity .3s ease, transform .3s cubic-bezier(.22, .61, .36, 1);
-}
-
-.tcard:hover .tcard__mark,
-.tcard:focus-visible .tcard__mark {
-  opacity: 1;
-  transform: none;
-}
-
 /* ---- Riel inferior ---- */
 /* La línea que el cliente pone bajo cada tile. Arranca con un tramo corto en
    rojo y se completa al apuntar. */
