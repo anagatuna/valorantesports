@@ -39,6 +39,8 @@
  *   node scrape_riot.mjs               # escribir en la base
  *   node scrape_riot.mjs --verbose     # listar cada foto emparejada
  *   node scrape_riot.mjs --solo-equipos  # saltarse los rosters
+ *   node scrape_riot.mjs --insertar-faltantes  # dar de alta los fichajes
+ *                                              # que vlr.gg aun no publica
  */
 
 import { createClient } from '@supabase/supabase-js';
@@ -78,6 +80,18 @@ const probe = args.includes('--probe');
 const dryRun = args.includes('--dry-run');
 const verbose = args.includes('--verbose');
 const soloEquipos = args.includes('--solo-equipos');
+const insertarFaltantes = args.includes('--insertar-faltantes');
+
+/**
+ * Las personas que crea este script llevan el id de Riot prefijado, para no
+ * confundirlas con las de vlr.gg: la PK de `players` guarda ids de vlr.gg
+ * ("11524") y los de Riot son snowflakes ("106507078369536452"). Con el
+ * prefijo se puede saber de un vistazo de dónde salió cada fila y borrarlas
+ * todas de golpe si hace falta:
+ *   delete from players where id like 'riot:%';
+ */
+const PREFIJO = 'riot:';
+const esDeRiot = (id) => String(id).startsWith(PREFIJO);
 const KEY = getArg('key') || process.env.RIOT_ESPORTS_KEY || DEFAULT_KEY;
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -394,8 +408,10 @@ async function correrSync() {
 
   const filasTeams = [];
   const filasPlayers = [];
+  const filasNuevas = [];
   const equiposSinCruzar = [];
   const personasSinCruzar = [];
+  const duplicados = [];
 
   for (const rt of riotTeams) {
     const mio = cruzar(rt, porNombre, porTag);
@@ -415,13 +431,43 @@ async function correrSync() {
     const candidatos = porEquipo.get(mio.vlr_id) || [];
     const porNick = new Map(candidatos.map(p => [norm(p.user), p]));
 
+    // Una fila creada por este script queda obsoleta en cuanto vlr.gg publica
+    // a esa persona con su propio id: quedarían dos filas del mismo jugador y
+    // la ficha lo mostraría por duplicado.
+    for (const p of candidatos.filter(c => esDeRiot(c.id))) {
+      const gemela = candidatos.find(c => !esDeRiot(c.id) && norm(c.user) === norm(p.user));
+      if (gemela) duplicados.push({ id: p.id, texto: `${mio.name} / ${p.user}` });
+    }
+
     for (const persona of rosters.get(rt.riot_id) || []) {
       if (!persona.img) continue;
       const suyo = porNick.get(norm(persona.nick)) || porPrefijo(persona.nick, candidatos);
+
       if (!suyo) {
         personasSinCruzar.push(`${rt.name} / ${persona.nick}`);
+        if (insertarFaltantes && persona.riot_id) {
+          filasNuevas.push({
+            id: `${PREFIJO}${persona.riot_id}`,
+            team_vlr_id: mio.vlr_id,
+            user: persona.nick,
+            name: persona.realName,
+            img: null,
+            riot_img: persona.img,
+            riot_id: persona.riot_id,
+            country: null,
+            // Riot manda role:"none" para todo el mundo en VALORANT, así que
+            // no hay forma de saber si es jugador o staff. Se asume jugador,
+            // que es el caso mayoritario, y se corrige solo cuando vlr.gg
+            // publique a esa persona.
+            role: 'player',
+            staff_tag: null,
+            url: null,
+            updated_at: new Date().toISOString()
+          });
+        }
         continue;
       }
+
       filasPlayers.push({
         id: suyo.id,
         riot_img: persona.img,
@@ -446,34 +492,45 @@ async function correrSync() {
     console.log(`\nPersonas de Riot que no están en tu base (${personasSinCruzar.length}):`);
     personasSinCruzar.slice(0, 25).forEach(p => console.log(`  - ${p}`));
     if (personasSinCruzar.length > 25) console.log(`  ... y ${personasSinCruzar.length - 25} más`);
-    console.log('  -> son fichajes que vlr.gg todavía no refleja; corré');
-    console.log('     scrape_roster.mjs y volvé a pasar este script.');
+    console.log(insertarFaltantes
+      ? `  -> se insertan ${filasNuevas.length} con id "${PREFIJO}<id de Riot>" y rol player.`
+      : '  -> son fichajes que vlr.gg todavía no refleja. Para darlos de alta'
+        + ' desde\n     Riot, corré con --insertar-faltantes.');
+  }
+
+  if (duplicados.length) {
+    console.log(`\nFilas de Riot que vlr.gg ya publicó por su cuenta (${duplicados.length}):`);
+    duplicados.forEach(d => console.log(`  - ${d.texto}  (${d.id})`));
+    console.log('  -> están duplicadas en la ficha. Para quitarlas:');
+    console.log(`     delete from players where id in (${duplicados.map(d => `'${d.id}'`).join(', ')});`);
   }
 
   if (dryRun) {
     console.log('\nDRY-RUN: no se escribió nada.');
-    if (filasPlayers[0]) console.log('Muestra:', JSON.stringify(filasPlayers[0], null, 2));
+    if (filasNuevas[0]) console.log('Alta nueva:', JSON.stringify(filasNuevas[0], null, 2));
+    else if (filasPlayers[0]) console.log('Muestra:', JSON.stringify(filasPlayers[0], null, 2));
     return;
   }
 
   console.log('\nGuardando...');
-  const guardar = async (tabla, filas, onConflict) => {
+  const guardar = async (tabla, filas, onConflict, etiqueta = tabla) => {
     if (!filas.length) return;
     for (let i = 0; i < filas.length; i += 200) {
       const { error } = await supabase
         .from(tabla).upsert(filas.slice(i, i + 200), { onConflict });
       if (error) {
-        console.error(`  error ${tabla}: ${error.message}`);
+        console.error(`  error ${etiqueta}: ${error.message}`);
         if (/riot_img|riot_id|column/i.test(error.message)) {
           console.error('  -> falta la migración: corré sql/004_players_riot.sql.');
         }
         process.exit(1);
       }
     }
-    console.log(`  ${tabla}: ${filas.length} guardados`);
+    console.log(`  ${etiqueta}: ${filas.length} guardados`);
   };
 
   await guardar('teams', filasTeams, 'name');
+  await guardar('players', filasNuevas, 'id', 'players (altas de Riot)');
   await guardar('players', filasPlayers, 'id');
   console.log('\nListo.');
 }
