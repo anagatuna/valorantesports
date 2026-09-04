@@ -1935,3 +1935,19 @@ main {
 .agent-card--table:hover {
   filter: drop-shadow(0 8px 12px rgba(0, 0, 0, .28));
 }
+/* ---------------------------------------------------------------
+   Tira de rondas (RoundTimeline)
+   --------------------------------------------------------------- */
+/* La tira scrollea en horizontal cuando la pantalla es estrecha, pero la
+   barra nativa de Windows es un bloque gris que parte la tarjeta en dos.
+   La ocultamos —igual que hace vlr.gg con su .vm-stats— y dejamos que el
+   scroll siga funcionando con rueda, arrastre y tactil: que los cuadros
+   queden cortados a media columna ya avisa de que hay mas a la derecha. */
+.rondas-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.rondas-scroll::-webkit-scrollbar {
+  display: none;
+}
