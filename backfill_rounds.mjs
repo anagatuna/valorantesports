@@ -19,10 +19,10 @@ dotenv.config({ path: '.env.local' });
  * queremos que vlr.gg nos corte. Es reanudable: solo coge mapas con `rounds`
  * NULL, asi que si se interrumpe basta con volver a lanzarlo.
  *
- * Ojo: un mapa se queda con NULL para siempre si vlr.gg no publica su
- * desglose (pasa en partidos viejos y en parte de Challengers/GC), asi que
- * las corridas siguientes lo reintentaran. Es barato y no hace daño; el
- * resumen final dice cuantos fueron.
+ * Un mapa cuyo desglose vlr.gg no publica (partidos viejos, parte de
+ * Challengers/GC) se marca con [] en vez de dejarlo en NULL, para que salga de
+ * la cola. Si no, volveria a salir en cada corrida y esto no terminaria nunca.
+ * El resumen final dice cuantas corridas quedan.
  *
  * vlr.gg responde 403 a las IPs domesticas. backfill_events.mjs se rinde ahi
  * y solo corre desde GitHub Actions, pero este script tambien tiene que servir
@@ -141,8 +141,33 @@ function mapTabs($) {
     if (!name) return;
     tabs.push({ id, name });
   });
+
+  if (tabs.length > 0) return tabs;
+
+  // En un Bo1 vlr.gg no dibuja la barra de tabs —no hay entre que elegir— pero
+  // el bloque del mapa y su desglose estan igual. Sin este respaldo los Bo1 se
+  // quedaban siempre fuera: mapTabs devolvia vacio y los dabamos por
+  // "pagina sin mapas", asi que volvian a salir en cada corrida.
+  $('.vm-stats-game').each((_, el) => {
+    const g = $(el);
+    const id = g.attr('data-game-id');
+    if (!id || id === 'all') return;
+    // El .map viene como "Sunset -" o "Bind PICK"; nos quedamos con la primera
+    // palabra util.
+    const name = clean(g.find('.map').first().text()).replace(/\b(PICK|BAN)\b/gi, '').replace(/[-–]\s*$/, '').trim();
+    if (!name) return;
+    tabs.push({ id, name });
+  });
+
   return tabs;
 }
+
+// map_name que no nombran ningun mapa: filas que dejo una version vieja del
+// scraper. Al resolverlas por posicion aprovechamos para corregirlas.
+const nombreInservible = (n) => {
+  const s = clean(n);
+  return !s || /^\d+$/.test(s) || /^(tbd|unknown|all maps)$/i.test(s);
+};
 
 async function main() {
   console.log(`📡 Backfill de rondas${DRY ? ' (dry run)' : ''} — hasta ${LIMIT} partidos, ${DELAY_MS}ms entre peticiones.`);
@@ -171,8 +196,20 @@ async function main() {
     porPartido.get(fila.match_id).push(fila);
   }
 
+  // La consulta de arriba la corta Supabase en 1000 filas, asi que
+  // porPartido.size no es el total: para saber cuanto queda de verdad —y
+  // cuantas corridas mas hacen falta— hay que contar aparte.
+  let totalMapas = null;
+  if (!SOLO_MATCH) {
+    const { count } = await supabase
+      .from('match_maps')
+      .select('id', { count: 'exact', head: true })
+      .is('rounds', null);
+    totalMapas = count;
+  }
+
   const ids = [...porPartido.keys()].slice(0, LIMIT);
-  console.log(`   ${porPartido.size} partidos con mapas sin desglose. Procesando ${ids.length}.\n`);
+  console.log(`   ${porPartido.size} partidos en esta tanda (${totalMapas ?? '?'} mapas sin comprobar en total). Procesando ${ids.length}.\n`);
 
   let ok = 0, sinDatos = 0, fallos = 0;
 
@@ -205,34 +242,59 @@ async function main() {
     }
 
     const tabs = mapTabs($);
-    let escritos = 0;
+    let escritos = 0, marcados = 0;
+
+    // Sin tabs no hemos leido nada util (pagina rara o a medio cargar): no
+    // damos por comprobado nada, que se reintente en la siguiente corrida.
+    const paginaValida = tabs.length > 0;
 
     for (const fila of filas) {
-      const tab = tabs.find((t) => t.name.toLowerCase() === String(fila.map_name).toLowerCase());
-      if (!tab) continue;
+      let tab = tabs.find((t) => t.name.toLowerCase() === String(fila.map_name).toLowerCase());
 
-      const rounds = parseMapRounds($, tab.id);
-      if (!rounds) continue;
+      // Los Bo1 viejos se guardaron con map_name '1' o 'Unknown', asi que por
+      // nombre no casan con nada. Si solo hay un mapa a cada lado no hay
+      // ambigüedad posible: son el mismo.
+      const porPosicion = !tab && tabs.length === 1 && filas.length === 1 && nombreInservible(fila.map_name);
+      if (porPosicion) tab = tabs[0];
+
+      const rounds = tab ? parseMapRounds($, tab.id) : null;
+
+      // Aqui esta la diferencia entre "aun no lo he mirado" y "lo he mirado y
+      // vlr.gg no lo publica". Si dejaramos NULL en el segundo caso, esos
+      // mapas volverian a salir en la consulta de pendientes en cada corrida
+      // y el backfill no terminaria nunca: siempre habria 700 partidos por
+      // hacer, los mismos. Guardamos [] para que salgan de la cola.
+      const valor = rounds && rounds.length ? rounds : (paginaValida ? [] : null);
+      if (valor === null) continue;
 
       if (DRY) {
-        escritos++;
+        if (valor.length) escritos++; else marcados++;
         continue;
       }
 
+      // Ya que tocamos la fila, le ponemos el nombre real del mapa: dejarla
+      // como "1" pintaba un mapa llamado 1 en la pagina del partido.
+      const cambios = { rounds: valor };
+      if (porPosicion && tab?.name) cambios.map_name = tab.name;
+
       const { error: upErr } = await supabase
         .from('match_maps')
-        .update({ rounds })
+        .update(cambios)
         .eq('id', fila.id);
 
       if (upErr) console.log(`   ❌ ${etiqueta} ${fila.map_name} -> ${upErr.message}`);
-      else escritos++;
+      else if (valor.length) escritos++;
+      else marcados++;
     }
 
     if (escritos > 0) {
-      console.log(`   ✅ ${etiqueta} -> ${escritos} mapas con rondas`);
+      console.log(`   ✅ ${etiqueta} -> ${escritos} mapas con rondas${marcados ? `, ${marcados} sin desglose` : ''}`);
       ok++;
+    } else if (marcados > 0) {
+      console.log(`   ⚠️ ${etiqueta} -> vlr.gg no publica el desglose (marcado, no vuelve a salir)`);
+      sinDatos++;
     } else {
-      console.log(`   ⚠️ ${etiqueta} -> vlr.gg no publica el desglose`);
+      console.log(`   ⚠️ ${etiqueta} -> pagina sin mapas, se reintentara`);
       sinDatos++;
     }
 
@@ -241,8 +303,19 @@ async function main() {
   }
 
   console.log(`\n🏁 ${ok} partidos rellenados, ${sinDatos} sin desglose en vlr.gg, ${fallos} fallos.`);
-  const restantes = porPartido.size - ids.length;
-  if (restantes > 0) console.log(`   Quedan ~${restantes}. Vuelve a lanzarlo para continuar.`);
+
+  if (SOLO_MATCH) return;
+
+  const { count: quedan } = await supabase
+    .from('match_maps')
+    .select('id', { count: 'exact', head: true })
+    .is('rounds', null);
+
+  if (quedan > 0) {
+    console.log(`   Quedan ${quedan} mapas sin comprobar (~${Math.ceil(quedan / 900)} corridas mas). Vuelve a lanzarlo.`);
+  } else {
+    console.log('   No queda nada por comprobar.');
+  }
 }
 
 main().catch((e) => {

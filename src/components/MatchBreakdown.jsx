@@ -135,6 +135,14 @@ export default function MatchBreakdown({ match, maps, stats }) {
 
   const mapResult = useMemo(() => maps.find((m) => m.map_name === selected), [maps, selected]);
 
+  // El resumen de arriba sigue al tab elegido: con un mapa concreto solo se
+  // enseña ese, y "All Maps" es el unico que los lista todos. Antes salian
+  // siempre los dos y no se entendia que el tab hubiera hecho algo.
+  const mapsVisibles = useMemo(
+    () => (selected === ALL_MAPS ? maps : maps.filter((m) => m.map_name === selected)),
+    [maps, selected]
+  );
+
   const board = useMemo(() => {
     const rows = stats.filter((s) => s.map_name === selected);
     const { rowsA, rowsB } = splitByTeam(rows, name1, name2);
@@ -195,12 +203,16 @@ export default function MatchBreakdown({ match, maps, stats }) {
         </div>
       </header>
 
-      {/* ===== Resumen de todos los mapas ===== */}
-      {maps.length > 0 && (
+      {/* ===== Resumen del mapa (o de todos, con "All Maps") ===== */}
+      {mapsVisibles.length > 0 && (
         <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-          <h2 className="mb-4 text-xs font-bold uppercase tracking-widest text-white/50">Mapas · {maps.length}</h2>
+          <h2 className="mb-4 text-xs font-bold uppercase tracking-widest text-white/50">
+            {/* El nombre del mapa ya lo pone el bloque de abajo; repetirlo
+                aqui sacaba "ABYSS" dos veces seguidas. */}
+            {selected === ALL_MAPS ? `Mapas · ${maps.length}` : "Mapa"}
+          </h2>
           <div className="flex flex-col gap-4">
-            {maps.map((m) => {
+            {mapsVisibles.map((m) => {
               const sc = mapScore(m);
               return (
               <div key={m.id} className="flex flex-col gap-2 border-b border-white/5 pb-4 last:border-0 last:pb-0">
@@ -228,7 +240,7 @@ export default function MatchBreakdown({ match, maps, stats }) {
               );
             })}
           </div>
-          {maps.some((m) => m.rounds?.length) && (
+          {mapsVisibles.some((m) => m.rounds?.length) && (
             <div className="mt-4 border-t border-white/5 pt-3">
               <RoundLegend />
             </div>

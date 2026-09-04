@@ -20,10 +20,18 @@
 --   how   como acabo: "elim" | "defuse" | "boom" | "time" (null si no se supo)
 --   score marcador acumulado tras la ronda, "A-B"
 --
--- NULL significa "vlr.gg no publica el desglose de este mapa" (pasa en
--- partidos viejos y en parte de Challengers/GC), no "0 rondas". La vista se
--- apoya en esa diferencia para no pintar una tira vacia.
+-- Hay tres estados, y la diferencia importa:
+--
+--   NULL  todavia no se ha mirado. backfill_rounds.mjs lo coge como pendiente.
+--   []    mirado, y vlr.gg no publica el desglose de ese mapa (pasa en
+--         partidos viejos y en parte de Challengers/GC). Sale de la cola del
+--         backfill: si estos se quedaran en NULL volverian a salir en cada
+--         corrida y el backfill no terminaria nunca.
+--   [...] el desglose.
+--
+-- La vista no pinta la tira ni con NULL ni con [], asi que para quien mira la
+-- pagina los dos primeros son lo mismo; la diferencia es solo para el backfill.
 ALTER TABLE match_maps ADD COLUMN IF NOT EXISTS rounds jsonb;
 
 COMMENT ON COLUMN match_maps.rounds IS
-  'Desglose ronda a ronda: [{n,w,side,how,score}]. NULL = vlr.gg no lo publica.';
+  'Desglose ronda a ronda: [{n,w,side,how,score}]. NULL = sin comprobar, [] = vlr.gg no lo publica.';
