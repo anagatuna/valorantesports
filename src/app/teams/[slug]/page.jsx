@@ -8,6 +8,7 @@ import { REGION_LOGOS } from '@/lib/regionLogos';
 import { TEAM_LOGO_TONE } from '@/lib/teamLogoTone';
 import RegionTabs from '@/components/RegionTabs';
 import BackLink from '@/components/BackLink';
+import FallbackImg from '@/components/FallbackImg';
 
 // La misma que usa ScheduleCard. Fija a propósito: formatear en el huso del
 // visitante haría que el HTML del servidor y el del cliente no coincidan.
@@ -130,24 +131,18 @@ function PlayerCard({ player }) {
         {player.role}
       </span>
 
-      {player.img ? (
-        <img
-          src={player.img}
-          alt={player.nick}
-          loading="lazy"
-          className={
-            'absolute inset-0 z-0 h-full w-full object-cover object-top ' +
-            'transition-transform duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] group-hover:scale-[1.06]'
-          }
-        />
-      ) : (
-        <span
-          aria-hidden="true"
-          className="absolute inset-x-0 top-[26%] z-0 select-none text-center text-6xl font-black text-white/5"
-        >
-          {getInitials(player.nick)}
-        </span>
-      )}
+      <FallbackImg
+        sources={player.imgs?.length ? player.imgs : [player.img].filter(Boolean)}
+        alt={player.nick}
+        loading="lazy"
+        className={
+          'absolute inset-0 z-0 h-full w-full object-cover object-top ' +
+          'transition-transform duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] group-hover:scale-[1.06]'
+        }
+        fallbackText={getInitials(player.nick)}
+        fallbackClassName="absolute inset-x-0 top-[26%] z-0 select-none text-center text-6xl font-black text-white/5"
+      />
+
 
       <div className="relative z-10 w-full bg-gradient-to-t from-[#0f1215] via-[#0f1215]/95 to-transparent px-3 pb-4 pt-14">
         <p className="truncate font-[family-name:var(--font-mark)] text-lg font-bold uppercase leading-none text-white">

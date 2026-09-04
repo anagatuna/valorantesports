@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Image from "next/image";
 import MapBackground from "@/components/MapBackground";
+import RoundTimeline, { RoundLegend } from "@/components/RoundTimeline";
 import { resolveMapImage } from "@/lib/maps";
 import { agentKey, resolveAgentPair, splitAgents, splitByTeam } from "@/lib/agents";
 
@@ -215,10 +216,23 @@ export default function MatchBreakdown({ match, maps, stats }) {
                   <SideSplit label={name1} ct={m.t1_ct ?? 0} t={m.t1_t ?? 0} />
                   <SideSplit label={name2} ct={m.t2_ct ?? 0} t={m.t2_t ?? 0} />
                 </div>
+                {/* Solo sale si vlr.gg publico el desglose de ese mapa. */}
+                <RoundTimeline
+                  rounds={m.rounds}
+                  name1={name1}
+                  name2={name2}
+                  logo1={match.team_a_logo}
+                  logo2={match.team_b_logo}
+                />
               </div>
               );
             })}
           </div>
+          {maps.some((m) => m.rounds?.length) && (
+            <div className="mt-4 border-t border-white/5 pt-3">
+              <RoundLegend />
+            </div>
+          )}
         </section>
       )}
 

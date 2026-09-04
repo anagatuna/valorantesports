@@ -90,20 +90,37 @@ export function parseRoster(raw) {
 }
 
 function shape(row) {
+  // El oficial de Riot primero, el de vlr.gg detrás. Se entregan los dos: hay
+  // redes que filtran el CDN de Riot, así que la elección final la hace el
+  // navegador en <TeamLogo> según cuál cargue de verdad.
+  const logos = [getLogo(row.riot_img), getLogo(row.img)].filter(Boolean);
+
   return {
     ...row,
     slug: slugify(row.name),
-    logo: getLogo(row.img),
+    logo: logos[0] || null,
+    logos,
     players: parseRoster(row.roster)
   };
 }
 
+/**
+ * Corre una consulta pidiendo `riot_img` y la reintenta sin ella si la
+ * columna todavía no existe (sql/004_players_riot.sql sin correr). Sin esto
+ * el select falla entero y la grilla se queda vacía.
+ */
+async function selectTeams(construir) {
+  let { data, error } = await construir(`${COLS}, riot_img`);
+  if (error) ({ data, error } = await construir(COLS));
+  return { data, error };
+}
+
 export async function getTeamsByBucket(bucket) {
-  const { data, error } = await supabase
+  const { data, error } = await selectTeams(cols => supabase
     .from('teams')
-    .select(COLS)
+    .select(cols)
     .eq('region', bucket)
-    .order('name', { ascending: true });
+    .order('name', { ascending: true }));
 
   if (error) {
     console.error(`Error trayendo equipos de ${bucket}:`, error.message);
@@ -140,11 +157,11 @@ export async function getTeamsGrouped({ partnersOnly = true } = {}) {
     }
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await selectTeams(cols => supabase
     .from('teams')
-    .select(COLS)
+    .select(cols)
     .in('region', BUCKET_LABELS)
-    .order('name', { ascending: true });
+    .order('name', { ascending: true }));
 
   if (error) {
     console.error('Error trayendo equipos:', error.message);
@@ -159,13 +176,23 @@ export async function getTeamsGrouped({ partnersOnly = true } = {}) {
  * Devuelve null si la tabla todavía no existe o el equipo no tiene vlr_id,
  * para que el llamador caiga al parseo del texto viejo.
  */
+const PLAYER_COLS = 'id, user, name, img, country, role, staff_tag';
+
 async function getPlayersFromTable(vlrId) {
   if (!vlrId) return null;
 
-  const { data, error } = await supabase
+  const consultar = (cols) => supabase
     .from('players')
-    .select('id, user, name, img, country, role, staff_tag')
+    .select(cols)
     .eq('team_vlr_id', vlrId);
+
+  // `riot_img` la agrega sql/004_players_riot.sql. Si todavía no se corrió,
+  // pedirla hace fallar el select entero y el equipo se quedaría sin roster;
+  // por eso se reintenta sin ella en vez de dar el fallo por bueno.
+  let { data, error } = await consultar(`${PLAYER_COLS}, riot_img`);
+  if (error) {
+    ({ data, error } = await consultar(PLAYER_COLS));
+  }
 
   if (error || !data || data.length === 0) return null;
 
@@ -179,7 +206,10 @@ async function getPlayersFromTable(vlrId) {
       role: (p.staff_tag || p.role || 'player').toUpperCase(),
       isPlayer: p.role === 'player',
       isInactive: p.role === 'inactive',
-      img: getLogo(p.img),
+      // La oficial de Riot primero, la de vlr.gg detrás. Se entregan las dos
+      // y elige el navegador según cuál cargue: ver FallbackImg.
+      img: getLogo(p.riot_img) || getLogo(p.img),
+      imgs: [getLogo(p.riot_img), getLogo(p.img)].filter(Boolean),
       country: p.country || null
     }));
 }

@@ -1618,26 +1618,6 @@ main {
   background: var(--accent);
 }
 
-/* Marca de esquina del tile seleccionado. */
-.tcard__mark {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 14px;
-  height: 14px;
-  background: var(--accent);
-  clip-path: polygon(100% 0, 100% 100%, 0 0);
-  opacity: 0;
-  transform: translate(5px, -5px);
-  transition: opacity .3s ease, transform .3s cubic-bezier(.22, .61, .36, 1);
-}
-
-.tcard:hover .tcard__mark,
-.tcard:focus-visible .tcard__mark {
-  opacity: 1;
-  transform: none;
-}
-
 /* ---- Riel inferior ---- */
 /* La línea que el cliente pone bajo cada tile. Arranca con un tramo corto en
    rojo y se completa al apuntar. */
@@ -1954,4 +1934,20 @@ main {
 /* Micro-ajuste de sombra al hover para no exagerar */
 .agent-card--table:hover {
   filter: drop-shadow(0 8px 12px rgba(0, 0, 0, .28));
+}
+/* ---------------------------------------------------------------
+   Tira de rondas (RoundTimeline)
+   --------------------------------------------------------------- */
+/* La tira scrollea en horizontal cuando la pantalla es estrecha, pero la
+   barra nativa de Windows es un bloque gris que parte la tarjeta en dos.
+   La ocultamos —igual que hace vlr.gg con su .vm-stats— y dejamos que el
+   scroll siga funcionando con rueda, arrastre y tactil: que los cuadros
+   queden cortados a media columna ya avisa de que hay mas a la derecha. */
+.rondas-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.rondas-scroll::-webkit-scrollbar {
+  display: none;
 }

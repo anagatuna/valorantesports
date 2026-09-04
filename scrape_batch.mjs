@@ -5,6 +5,7 @@ import axios from 'axios';
 import https from 'https';
 import crypto from 'crypto';
 import { extractEvent, ensureEvent } from './vlr_event.mjs';
+import { parseMapRounds } from './vlr_rounds.mjs';
 
 dotenv.config({ path: '.env.local' });
 
@@ -82,6 +83,37 @@ async function obtenerIdsRecientes() {
     
     console.log(`   ✅ Encontrados: ${upcomingIds.length} próximos, ${resultsIds.length} resultados.`);
     return unique.slice(0, MAX_MATCHES);
+}
+
+// Se avisa una sola vez por corrida, no una por partido.
+let avisadoSinRounds = false;
+
+/**
+ * Inserta las filas de match_maps.
+ *
+ * Como justo antes se borran las del partido, un insert que falle deja el
+ * desglose de mapas VACIO. Eso pasaria en cada partido si el scraper se
+ * despliega antes de correr sql/005_match_rounds.sql, asi que si la columna
+ * `rounds` todavia no existe reintentamos sin ella: se pierde la tira de
+ * rondas, no la tabla de mapas.
+ */
+async function guardarMapas(mapsInfo) {
+    const { error } = await supabase.from('match_maps').insert(mapsInfo);
+    if (!error) return;
+
+    const faltaColumna = /rounds/i.test(error.message || '') || error.code === 'PGRST204';
+    if (!faltaColumna) {
+        console.error(`   ❌ Error DB Mapas: ${error.message}`);
+        return;
+    }
+
+    if (!avisadoSinRounds) {
+        console.warn('   ⚠️ match_maps no tiene la columna `rounds`: corre sql/005_match_rounds.sql. Guardando mapas sin desglose.');
+        avisadoSinRounds = true;
+    }
+    const sinRounds = mapsInfo.map(({ rounds, ...resto }) => resto);
+    const { error: e2 } = await supabase.from('match_maps').insert(sinRounds);
+    if (e2) console.error(`   ❌ Error DB Mapas: ${e2.message}`);
 }
 
 // --- 2. SCRAPING INDIVIDUAL ---
@@ -221,10 +253,14 @@ async function scrapearPartido(matchId, index, total) {
                     const s2 = extractInt(row2.find('.score').first().text());
                     if (s1 || s2) { sA = s1; sB = s2; }
                 }
+                // Desglose ronda a ronda. Es best-effort: vlr.gg no lo publica
+                // en todos los eventos, y sin el la fila del mapa sigue valiendo.
+                const rounds = parseMapRounds($, map.id);
                 mapsInfo.push({
                     match_id: matchId, map_name: map.cleanName,
                     score_a: sA, score_b: sB,
-                    t1_t, t1_ct, t2_t, t2_ct
+                    t1_t, t1_ct, t2_t, t2_ct,
+                    rounds
                 });
             }
 
@@ -264,11 +300,12 @@ async function scrapearPartido(matchId, index, total) {
         // --- 7. GUARDAR STATS (Solo si existen) ---
         if (allStats.length > 0) {
             await supabase.from('match_maps').delete().eq('match_id', matchId);
-            if (mapsInfo.length > 0) await supabase.from('match_maps').insert(mapsInfo);
+            if (mapsInfo.length > 0) await guardarMapas(mapsInfo);
             await supabase.from('match_stats').delete().eq('match_id', matchId);
             const { error } = await supabase.from('match_stats').insert(allStats);
 
-            if (!error) console.log(`   💾 Stats guardados (${allStats.length}).`);
+            const conRondas = mapsInfo.filter(m => m.rounds?.length).length;
+            if (!error) console.log(`   💾 Stats guardados (${allStats.length}). Mapas con rondas: ${conRondas}/${mapsInfo.length}.`);
             else console.error(`   ❌ Error DB Stats: ${error.message}`);
         } else if (status === 'UPCOMING') {
             console.log(`   ℹ️ Sin stats (partido futuro, es normal).`);
