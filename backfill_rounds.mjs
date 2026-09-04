@@ -141,8 +141,33 @@ function mapTabs($) {
     if (!name) return;
     tabs.push({ id, name });
   });
+
+  if (tabs.length > 0) return tabs;
+
+  // En un Bo1 vlr.gg no dibuja la barra de tabs —no hay entre que elegir— pero
+  // el bloque del mapa y su desglose estan igual. Sin este respaldo los Bo1 se
+  // quedaban siempre fuera: mapTabs devolvia vacio y los dabamos por
+  // "pagina sin mapas", asi que volvian a salir en cada corrida.
+  $('.vm-stats-game').each((_, el) => {
+    const g = $(el);
+    const id = g.attr('data-game-id');
+    if (!id || id === 'all') return;
+    // El .map viene como "Sunset -" o "Bind PICK"; nos quedamos con la primera
+    // palabra util.
+    const name = clean(g.find('.map').first().text()).replace(/\b(PICK|BAN)\b/gi, '').replace(/[-–]\s*$/, '').trim();
+    if (!name) return;
+    tabs.push({ id, name });
+  });
+
   return tabs;
 }
+
+// map_name que no nombran ningun mapa: filas que dejo una version vieja del
+// scraper. Al resolverlas por posicion aprovechamos para corregirlas.
+const nombreInservible = (n) => {
+  const s = clean(n);
+  return !s || /^\d+$/.test(s) || /^(tbd|unknown|all maps)$/i.test(s);
+};
 
 async function main() {
   console.log(`📡 Backfill de rondas${DRY ? ' (dry run)' : ''} — hasta ${LIMIT} partidos, ${DELAY_MS}ms entre peticiones.`);
@@ -224,7 +249,14 @@ async function main() {
     const paginaValida = tabs.length > 0;
 
     for (const fila of filas) {
-      const tab = tabs.find((t) => t.name.toLowerCase() === String(fila.map_name).toLowerCase());
+      let tab = tabs.find((t) => t.name.toLowerCase() === String(fila.map_name).toLowerCase());
+
+      // Los Bo1 viejos se guardaron con map_name '1' o 'Unknown', asi que por
+      // nombre no casan con nada. Si solo hay un mapa a cada lado no hay
+      // ambigüedad posible: son el mismo.
+      const porPosicion = !tab && tabs.length === 1 && filas.length === 1 && nombreInservible(fila.map_name);
+      if (porPosicion) tab = tabs[0];
+
       const rounds = tab ? parseMapRounds($, tab.id) : null;
 
       // Aqui esta la diferencia entre "aun no lo he mirado" y "lo he mirado y
@@ -240,9 +272,14 @@ async function main() {
         continue;
       }
 
+      // Ya que tocamos la fila, le ponemos el nombre real del mapa: dejarla
+      // como "1" pintaba un mapa llamado 1 en la pagina del partido.
+      const cambios = { rounds: valor };
+      if (porPosicion && tab?.name) cambios.map_name = tab.name;
+
       const { error: upErr } = await supabase
         .from('match_maps')
-        .update({ rounds: valor })
+        .update(cambios)
         .eq('id', fila.id);
 
       if (upErr) console.log(`   ❌ ${etiqueta} ${fila.map_name} -> ${upErr.message}`);

@@ -218,8 +218,36 @@ async function scrapearPartido(matchId, index, total) {
                 }
                 mapTabs.push({ id, cleanName: nameOnly, score_a: sA, score_b: sB });
             });
-        } else {
-             // Si no hay tabs (partido futuro), agregamos un placeholder
+        }
+
+        // En un Bo1 vlr.gg no dibuja la barra de tabs: no hay entre qué elegir.
+        // Antes caíamos en el placeholder 'TBD' de abajo, que el bucle descarta,
+        // así que los Bo1 se guardaban sin fila de mapa (o con map_name '1' /
+        // 'Unknown', según qué pillara el respaldo .js-map-switch). El bloque
+        // del mapa y su desglose están igual, solo hay que leerlos directo.
+        if (mapTabs.length === 0) {
+            $('.vm-stats-game').each((i, el) => {
+                const g = $(el);
+                const id = g.attr('data-game-id');
+                if (!id || id === 'all') return;
+                // El .map viene como "Sunset -" o "Bind PICK".
+                const nombre = clean(g.find('.map').first().text())
+                    .replace(/\b(PICK|BAN)\b/gi, '')
+                    .replace(/[-–]\s*$/, '')
+                    .trim();
+                if (!nombre) return;
+                const marcadores = g.find('.vm-stats-game-header .team .score');
+                mapTabs.push({
+                    id,
+                    cleanName: nombre,
+                    score_a: extractInt($(marcadores[0]).text()),
+                    score_b: extractInt($(marcadores[1]).text()),
+                });
+            });
+        }
+
+        if (mapTabs.length === 0) {
+             // Sin nada que leer (partido futuro), un placeholder que el bucle descarta.
              mapTabs.push({ id: 'all', cleanName: 'TBD', score_a: 0, score_b: 0 });
         }
 
